@@ -1,5 +1,5 @@
-# coding:utf-8
-"""æœ¬åœ°æ— QMTå®¢æˆ·ç«¯æ—¶ï¼Œä¸ºç­–ç•¥è„šæœ¬ç”Ÿæˆå¯é‡å¤çš„æ¨¡æ‹ŸKçº¿æ•°æ®ã€‚"""
+# coding:gbk
+"""±¾µØÎŞQMT¿Í»§¶ËÊ±£¬Îª²ßÂÔ½Å±¾Éú³É¿ÉÖØ¸´µÄÄ£ÄâKÏßÊı¾İ¡£"""
 import datetime as dt
 import random
 
@@ -9,7 +9,7 @@ FIELDS = ["open", "high", "low", "close", "volume", "amount"]
 
 
 def trading_calendar(start_date, end_date):
-    """start_date/end_date: 'YYYYMMDD'ã€‚åªæŒ‰å‘¨ä¸€åˆ°å‘¨äº”ç”Ÿæˆï¼Œä¸æ’èŠ‚å‡æ—¥ï¼Œä»…ä¾›æœ¬åœ°è·‘é€»è¾‘ç”¨ã€‚"""
+    """start_date/end_date: 'YYYYMMDD'¡£Ö»°´ÖÜÒ»µ½ÖÜÎåÉú³É£¬²»ÅÅ½Ú¼ÙÈÕ£¬½ö¹©±¾µØÅÜÂß¼­ÓÃ¡£"""
     start = dt.datetime.strptime(start_date, "%Y%m%d").date()
     end = dt.datetime.strptime(end_date, "%Y%m%d").date()
     dates = []
@@ -22,7 +22,7 @@ def trading_calendar(start_date, end_date):
 
 
 class SyntheticMarket(object):
-    """æŒ‰è‚¡ç¥¨ä»£ç ç”Ÿæˆç¡®å®šæ€§çš„éšæœºæ¸¸èµ°Kçº¿ï¼ŒåŒä¸€ä»£ç /åŒä¸€seedæ¯æ¬¡ç”Ÿæˆç»“æœä¸€è‡´ã€‚"""
+    """°´¹ÉÆ±´úÂëÉú³ÉÈ·¶¨ĞÔµÄËæ»úÓÎ×ßKÏß£¬Í¬Ò»´úÂë/Í¬Ò»seedÃ¿´ÎÉú³É½á¹ûÒ»ÖÂ¡£"""
 
     def __init__(self, calendar, base_price=10.0, seed=None):
         self.calendar = calendar

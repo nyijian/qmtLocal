@@ -1,34 +1,34 @@
-# coding:utf-8
+# coding:gbk
 
-#å¯¼å…¥å¸¸ç”¨åº“
+#µ¼Èë³£ÓÃ¿â
 import pandas as pd
 import numpy as np
 import talib
-#ç¤ºä¾‹è¯´æ˜ï¼šæœ¬ç­–ç•¥ï¼Œé€šè¿‡è®¡ç®—å¿«æ…¢åŒå‡çº¿ï¼Œåœ¨é‡‘å‰æ—¶ä¹°å…¥ï¼Œæ­»å‰æ—¶åšå–å‡º ç‚¹å‡»å›æµ‹è¿è¡Œ ä¸»å›¾é€‰æ‹©è¦äº¤æ˜“çš„è‚¡ç¥¨å“ç§
+#Ê¾ÀıËµÃ÷£º±¾²ßÂÔ£¬Í¨¹ı¼ÆËã¿ìÂıË«¾ùÏß£¬ÔÚ½ğ²æÊ±ÂòÈë£¬ËÀ²æÊ±×öÂô³ö µã»÷»Ø²âÔËĞĞ Ö÷Í¼Ñ¡ÔñÒª½»Ò×µÄ¹ÉÆ±Æ·ÖÖ
 
 def init(C):
-	#init handlebarå‡½æ•°çš„å…¥å‚æ˜¯ContextInfoå¯¹è±¡ å¯ä»¥ç¼©å†™ä¸ºC
-	#è®¾ç½®æµ‹è¯•æ ‡çš„ä¸ºä¸»å›¾å“ç§
+	#init handlebarº¯ÊıµÄÈë²ÎÊÇContextInfo¶ÔÏó ¿ÉÒÔËõĞ´ÎªC
+	#ÉèÖÃ²âÊÔ±êµÄÎªÖ÷Í¼Æ·ÖÖ
 	C.stock= C.stockcode + '.' +C.market
-	#line1å’Œline2åˆ†åˆ«ä¸ºä¸¤æ¡å‡çº¿æœŸæ•°
-	C.line1=10   #å¿«çº¿å‚æ•°
-	C.line2=20   #æ…¢çº¿å‚æ•°
-	#accountidä¸ºæµ‹è¯•çš„ID å›æµ‹æ¨¡å¼èµ„é‡‘è´¦å·å¯ä»¥å¡«ä»»æ„å­—ç¬¦ä¸²
+	#line1ºÍline2·Ö±ğÎªÁ½Ìõ¾ùÏßÆÚÊı
+	C.line1=10   #¿ìÏß²ÎÊı
+	C.line2=20   #ÂıÏß²ÎÊı
+	#accountidÎª²âÊÔµÄID »Ø²âÄ£Ê½×Ê½ğÕËºÅ¿ÉÒÔÌîÈÎÒâ×Ö·û´®
 	C.accountid = "testS"  
 
 def handlebar(C):
-	#å½“å‰kçº¿æ—¥æœŸ
+	#µ±Ç°kÏßÈÕÆÚ
 	bar_date = timetag_to_datetime(C.get_bar_timetag(C.barpos), '%Y%m%d%H%M%S')
-	#å›æµ‹ä¸éœ€è¦è®¢é˜…æœ€æ–°è¡Œæƒ…ä½¿ç”¨æœ¬åœ°æ•°æ®é€Ÿåº¦æ›´å¿« æŒ‡å®šsubscribeå‚æ•°ä¸ºå¦. å¦‚æœå›æµ‹å¤šä¸ªå“ç§ éœ€è¦å…ˆä¸‹è½½å¯¹åº”å‘¨æœŸå†å²æ•°æ® 
+	#»Ø²â²»ĞèÒª¶©ÔÄ×îĞÂĞĞÇéÊ¹ÓÃ±¾µØÊı¾İËÙ¶È¸ü¿ì Ö¸¶¨subscribe²ÎÊıÎª·ñ. Èç¹û»Ø²â¶à¸öÆ·ÖÖ ĞèÒªÏÈÏÂÔØ¶ÔÓ¦ÖÜÆÚÀúÊ·Êı¾İ 
 	local_data = C.get_market_data_ex(['close'], [C.stock], end_time = bar_date, period = C.period, count = max(C.line1, C.line2), subscribe = False)
 	close_list = list(local_data[C.stock].iloc[:, 0])
-	#å°†è·å–çš„å†å²æ•°æ®è½¬æ¢ä¸ºDataFrameæ ¼å¼æ–¹ä¾¿è®¡ç®—
-	#å¦‚æœç›®å‰æœªæŒä»“ï¼ŒåŒæ—¶å¿«çº¿ç©¿è¿‡æ…¢çº¿ï¼Œåˆ™ä¹°å…¥8æˆä»“ä½
+	#½«»ñÈ¡µÄÀúÊ·Êı¾İ×ª»»ÎªDataFrame¸ñÊ½·½±ã¼ÆËã
+	#Èç¹ûÄ¿Ç°Î´³Ö²Ö£¬Í¬Ê±¿ìÏß´©¹ıÂıÏß£¬ÔòÂòÈë8³É²ÖÎ»
 	if len(close_list) <1:
-		print(bar_date, 'è¡Œæƒ…ä¸è¶³ è·³è¿‡')
+		print(bar_date, 'ĞĞÇé²»×ã Ìø¹ı')
 	line1_mean = round(np.mean(close_list[-C.line1:]), 2)
 	line2_mean = round(np.mean(close_list[-C.line2:]), 2)
-	print(f"{bar_date} çŸ­å‡çº¿{line1_mean} é•¿å‡çº¿{line2_mean}")
+	print(f"{bar_date} ¶Ì¾ùÏß{line1_mean} ³¤¾ùÏß{line2_mean}")
 	account = get_trade_detail_data('test', 'stock', 'account')
 	account = account[0]
 	available_cash = int(account.m_dAvailable)
@@ -37,16 +37,16 @@ def handlebar(C):
 	holding_vol = holdings[C.stock] if C.stock in holdings else 0
 	if holding_vol == 0 and line1_mean > line2_mean:
 		vol = int(available_cash / close_list[-1] / 100) * 100
-		#ä¸‹å•å¼€ä»“
+		#ÏÂµ¥¿ª²Ö
 		passorder(23, 1101, C.accountid, C.stock, 5, -1, vol, C)
-		print(f"{bar_date} å¼€ä»“")
-		C.draw_text(1, 1, 'å¼€')
-	#å¦‚æœç›®å‰æŒä»“ä¸­ï¼ŒåŒæ—¶å¿«çº¿ä¸‹ç©¿æ…¢çº¿ï¼Œåˆ™å…¨éƒ¨å¹³ä»“
+		print(f"{bar_date} ¿ª²Ö")
+		C.draw_text(1, 1, '¿ª')
+	#Èç¹ûÄ¿Ç°³Ö²ÖÖĞ£¬Í¬Ê±¿ìÏßÏÂ´©ÂıÏß£¬ÔòÈ«²¿Æ½²Ö
 	elif holding_vol > 0 and line1_mean < line2_mean:
-		#çŠ¶æ€å˜æ›´ä¸ºæœªæŒä»“
+		#×´Ì¬±ä¸üÎªÎ´³Ö²Ö
 		C.holding=False
-		#ä¸‹å•å¹³ä»“
+		#ÏÂµ¥Æ½²Ö
 		passorder(24, 1101, C.accountid, C.stock, 5, -1, holding_vol, C)
-		print(f"{bar_date} å¹³ä»“")
-		C.draw_text(1, 1, 'å¹³')
+		print(f"{bar_date} Æ½²Ö")
+		C.draw_text(1, 1, 'Æ½')
 

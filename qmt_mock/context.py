@@ -1,10 +1,10 @@
-# coding:utf-8
-"""ä¸å¯åŠ¨QMTå®¢æˆ·ç«¯ï¼Œæœ¬åœ°è·‘ä¸€éç­–ç•¥è„šæœ¬init/handlebaré€»è¾‘ç”¨çš„æ¨¡æ‹Ÿä¸Šä¸‹æ–‡ã€‚
+# coding:gbk
+"""²»Æô¶¯QMT¿Í»§¶Ë£¬±¾µØÅÜÒ»±é²ßÂÔ½Å±¾init/handlebarÂß¼­ÓÃµÄÄ£ÄâÉÏÏÂÎÄ¡£
 
-åªå®ç°äº†main.pyè¿™ç±»è„šæœ¬å®é™…ç”¨åˆ°çš„QMTæ¥å£å­é›†ï¼ˆget_market_data_ex/get_bar_timetag/
-draw_text/passorder/get_trade_detail_dataï¼‰ï¼Œä¸æ˜¯QMT ContextInfoçš„å®Œæ•´å®ç°ã€‚
-å§”æ‰˜ä¸€å¾‹æŒ‰ä¸‹å•å½“æ ¹Kçº¿çš„æ”¶ç›˜ä»·æˆäº¤ï¼Œåªç”¨äºè·‘é€šç­–ç•¥é€»è¾‘ã€æš´éœ²è¯­æ³•/é€»è¾‘é”™è¯¯ï¼Œ
-ä¸æ˜¯å¯ç”¨äºè¯„ä¼°ç­–ç•¥æ”¶ç›Šçš„çœŸå®å›æµ‹å¼•æ“ï¼Œå›æµ‹ç»“æœä»éœ€å›åˆ°QMTå®¢æˆ·ç«¯é‡Œè·‘ã€‚
+Ö»ÊµÏÖÁËmain.pyÕâÀà½Å±¾Êµ¼ÊÓÃµ½µÄQMT½Ó¿Ú×Ó¼¯£¨get_market_data_ex/get_bar_timetag/
+draw_text/passorder/get_trade_detail_data£©£¬²»ÊÇQMT ContextInfoµÄÍêÕûÊµÏÖ¡£
+Î¯ÍĞÒ»ÂÉ°´ÏÂµ¥µ±¸ùKÏßµÄÊÕÅÌ¼Û³É½»£¬Ö»ÓÃÓÚÅÜÍ¨²ßÂÔÂß¼­¡¢±©Â¶Óï·¨/Âß¼­´íÎó£¬
+²»ÊÇ¿ÉÓÃÓÚÆÀ¹À²ßÂÔÊÕÒæµÄÕæÊµ»Ø²âÒıÇæ£¬»Ø²â½á¹ûÈÔĞè»Øµ½QMT¿Í»§¶ËÀïÅÜ¡£
 """
 import datetime as dt
 
@@ -59,7 +59,7 @@ class PaperAccount(object):
 
 
 class MockContextInfo(object):
-    """æ¨¡æ‹ŸQMTçš„ContextInfo/Cå¯¹è±¡ã€‚"""
+    """Ä£ÄâQMTµÄContextInfo/C¶ÔÏó¡£"""
 
     def __init__(self, stockcode, market, period="1d", start_date=None, end_date=None,
                  cash=1000000.0, seed=None):
@@ -70,7 +70,7 @@ class MockContextInfo(object):
 
         self.calendar = trading_calendar(start_date, end_date)
         if not self.calendar:
-            raise ValueError("å›æµ‹åŒºé—´å†…æ²¡æœ‰äº¤æ˜“æ—¥ï¼Œè¯·æ£€æŸ¥ start/end å‚æ•°")
+            raise ValueError("»Ø²âÇø¼äÄÚÃ»ÓĞ½»Ò×ÈÕ£¬Çë¼ì²é start/end ²ÎÊı")
         self.market_data = SyntheticMarket(self.calendar, seed=seed)
         self.account = PaperAccount(cash=cash)
 
@@ -99,7 +99,7 @@ class MockContextInfo(object):
 
 
 def build_globals(context):
-    """è¿”å›è¦æ³¨å…¥åˆ°ç­–ç•¥è„šæœ¬æ‰§è¡Œå‘½åç©ºé—´é‡Œçš„QMTå…¨å±€å‡½æ•°ï¼ˆpassorderç­‰ï¼‰ã€‚"""
+    """·µ»ØÒª×¢Èëµ½²ßÂÔ½Å±¾Ö´ĞĞÃüÃû¿Õ¼äÀïµÄQMTÈ«¾Öº¯Êı£¨passorderµÈ£©¡£"""
 
     def timetag_to_datetime(timetag, fmt=None):
         fmt = fmt or ("%Y%m%d" if timetag % 86400000 == 57600000 else "%Y%m%d%H%M%S")
@@ -115,7 +115,7 @@ def build_globals(context):
         elif op_type == STOCK_SELL:
             c.account.sell(order_code, fill_price, volume)
         else:
-            print("[passorder] æš‚ä¸æ”¯æŒçš„å§”æ‰˜ç±»å‹ optype={}ï¼Œå·²å¿½ç•¥".format(op_type))
+            print("[passorder] Ôİ²»Ö§³ÖµÄÎ¯ÍĞÀàĞÍ optype={}£¬ÒÑºöÂÔ".format(op_type))
 
     def get_trade_detail_data(accountid, accounttype, datatype, strategyname=""):
         if datatype == "account":

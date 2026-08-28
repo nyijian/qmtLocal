@@ -1,7 +1,7 @@
-# coding:utf-8
-"""ä¸æ‰“å¼€QMTå®¢æˆ·ç«¯ï¼Œç›´æ¥åœ¨æœ¬åœ°è·‘ä¸€éQMTç­–ç•¥è„šæœ¬çš„init/handlebaré€»è¾‘ã€‚
+# coding:gbk
+"""²»´ò¿ªQMT¿Í»§¶Ë£¬Ö±½ÓÔÚ±¾µØÅÜÒ»±éQMT²ßÂÔ½Å±¾µÄinit/handlebarÂß¼­¡£
 
-ç”¨æ³•:
+ÓÃ·¨:
     .venv\\Scripts\\python.exe -m qmt_mock.runner main.py --code 600000.SH --start 20240101 --end 20240301
 """
 import argparse
@@ -16,8 +16,18 @@ def run(strategy_path, code, start, end, period="1d", cash=1000000.0, seed=None)
     context = MockContextInfo(stockcode, market, period=period, start_date=start, end_date=end,
                                cash=cash, seed=seed)
 
-    with open(strategy_path, "r", encoding="utf-8") as f:
-        source = f.read()
+    # QMT¿Í»§¶Ë²ßÂÔ±à¼­Æ÷´æµÄÊÇGBK£¬±¾µØÒ²¿ÉÄÜĞ´³ÉUTF-8£¬Á½ÖÖ¶¼ÒªÄÜ¶Á¡£
+    # ÏÈ°´UTF-8ÑÏ¸ñ½â£¬Ê§°ÜÔÙ°´GBK½â£¨UTF-8ÖĞÎÄ×Ö½Ú°´GBK½â²»»á±¨´í£¬Ë³Ğò²»ÄÜ·´£©¡£
+    with open(strategy_path, "rb") as f:
+        raw = f.read()
+    for _enc in ("utf-8", "gbk"):
+        try:
+            source = raw.decode(_enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        raise RuntimeError("²ßÂÔÎÄ¼ş¼È²»ÊÇUTF-8Ò²²»ÊÇGBK: %s" % strategy_path)
 
     namespace = build_globals(context)
     namespace["__name__"] = "__qmt_strategy__"
@@ -25,31 +35,31 @@ def run(strategy_path, code, start, end, period="1d", cash=1000000.0, seed=None)
     exec(code_obj, namespace)
 
     if "init" not in namespace or "handlebar" not in namespace:
-        raise RuntimeError("ç­–ç•¥æ–‡ä»¶å¿…é¡»å®šä¹‰ init(C) å’Œ handlebar(C)")
+        raise RuntimeError("²ßÂÔÎÄ¼ş±ØĞë¶¨Òå init(C) ºÍ handlebar(C)")
 
     namespace["init"](context)
     for barpos in range(len(context.calendar)):
         context.barpos = barpos
         namespace["handlebar"](context)
 
-    print("\n===== æ¨¡æ‹Ÿè¿è¡Œç»“æŸï¼ˆåˆæˆè¡Œæƒ…ï¼Œä»…ç”¨äºè·‘é€šé€»è¾‘ï¼‰ =====")
-    print("æœ€ç»ˆå¯ç”¨èµ„é‡‘: {:,.2f}".format(context.account.cash))
+    print("\n===== Ä£ÄâÔËĞĞ½áÊø£¨ºÏ³ÉĞĞÇé£¬½öÓÃÓÚÅÜÍ¨Âß¼­£© =====")
+    print("×îÖÕ¿ÉÓÃ×Ê½ğ: {:,.2f}".format(context.account.cash))
     positions = context.account.position_detail()
     if not positions:
-        print("æŒä»“: æ— ")
+        print("³Ö²Ö: ÎŞ")
     for p in positions:
-        print("æŒä»“ {}.{}: {}".format(p.m_strInstrumentID, p.m_strExchangeID, p.m_nVolume))
+        print("³Ö²Ö {}.{}: {}".format(p.m_strInstrumentID, p.m_strExchangeID, p.m_nVolume))
 
 
 def main():
-    parser = argparse.ArgumentParser(description="æœ¬åœ°æ¨¡æ‹Ÿè¿è¡ŒQMTç­–ç•¥è„šæœ¬ï¼ˆæ— éœ€æ‰“å¼€QMTå®¢æˆ·ç«¯ï¼‰")
-    parser.add_argument("strategy", help="ç­–ç•¥.pyæ–‡ä»¶è·¯å¾„")
-    parser.add_argument("--code", default="000300.SH", help="ä¸»å›¾/æµ‹è¯•æ ‡çš„ï¼Œå¦‚ 600000.SH")
-    parser.add_argument("--start", default="20240101", help="èµ·å§‹æ—¥æœŸ YYYYMMDD")
-    parser.add_argument("--end", default="20240601", help="ç»“æŸæ—¥æœŸ YYYYMMDD")
+    parser = argparse.ArgumentParser(description="±¾µØÄ£ÄâÔËĞĞQMT²ßÂÔ½Å±¾£¨ÎŞĞè´ò¿ªQMT¿Í»§¶Ë£©")
+    parser.add_argument("strategy", help="²ßÂÔ.pyÎÄ¼şÂ·¾¶")
+    parser.add_argument("--code", default="000300.SH", help="Ö÷Í¼/²âÊÔ±êµÄ£¬Èç 600000.SH")
+    parser.add_argument("--start", default="20240101", help="ÆğÊ¼ÈÕÆÚ YYYYMMDD")
+    parser.add_argument("--end", default="20240601", help="½áÊøÈÕÆÚ YYYYMMDD")
     parser.add_argument("--period", default="1d")
     parser.add_argument("--cash", type=float, default=1000000.0)
-    parser.add_argument("--seed", default=None, help="éšæœºç§å­ï¼Œå›ºå®šåæ¯æ¬¡ç”Ÿæˆçš„æ¨¡æ‹Ÿè¡Œæƒ…ä¸€è‡´")
+    parser.add_argument("--seed", default=None, help="Ëæ»úÖÖ×Ó£¬¹Ì¶¨ºóÃ¿´ÎÉú³ÉµÄÄ£ÄâĞĞÇéÒ»ÖÂ")
     args = parser.parse_args()
 
     try:
