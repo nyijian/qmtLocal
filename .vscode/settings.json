@@ -4,5 +4,5 @@
   // Without this, VSCode opens them as UTF-8 and every Chinese char is garbled.
   "files.encoding": "gbk",
   "files.autoGuessEncoding": false,
-  "python.defaultInterpreterPath": "${workspaceFolder}\.venv\Scripts\python.exe"
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe"
 }
