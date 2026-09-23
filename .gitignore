@@ -2,3 +2,6 @@
 __pycache__/
 *.pyc
 real_data/
+
+# 账号、密码这类真实值放这里，不提交。模板见 .env.example。
+.env

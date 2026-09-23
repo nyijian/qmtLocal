@@ -26,11 +26,14 @@ import os
 # 走桥。miniQMT 恢复之后，把下面这几行换成 xtquant 对应模块即可，
 # 本文件其余部分一个字都不用动 —— 两者签名和返回值形状是对齐的。
 from qmt_bridge import xtdata
+from qmt_bridge.dotenv_lite import load_dotenv
 from qmt_bridge.xttrader import XtQuantTrader
 from qmt_bridge.xttype import StockAccount
 
 # --positions 不传 -a 时用哪个账号，跟 trade_monitor.py 保持一致：真实账号不写进代码，
-# 从环境变量拿。设置方式见 trade_monitor.py 里 DEFAULT_ACCOUNT 那段注释。
+# 放项目根目录的 .env 里（复制 .env.example 改一份）。设置方式见 trade_monitor.py
+# 里 DEFAULT_ACCOUNT 那段注释。
+load_dotenv()
 DEFAULT_ACCOUNT = os.environ.get('QMT_ACCOUNT_ID', '')
 DEFAULT_ACCOUNT_TYPE = os.environ.get('QMT_ACCOUNT_TYPE', 'STOCK')
 
@@ -110,14 +113,14 @@ def main():
     parser.add_argument('--positions', action='store_true',
                         help='不手动填代码，改成订阅当前持仓的所有标的')
     parser.add_argument('-a', '--account', default=DEFAULT_ACCOUNT,
-                        help='--positions 用哪个资金账号，不传就用 QMT_ACCOUNT_ID 环境变量')
+                        help='--positions 用哪个资金账号，不传就用 .env 里的 QMT_ACCOUNT_ID')
     parser.add_argument('-t', '--account-type', default=DEFAULT_ACCOUNT_TYPE)
     args = parser.parse_args()
 
     if args.positions:
         if not args.account:
-            raise SystemExit('--positions 需要账号：传 -a，或者设 QMT_ACCOUNT_ID 环境变量'
-                             '（见 trade_monitor.py 里 DEFAULT_ACCOUNT 那段注释）。')
+            raise SystemExit('--positions 需要账号：传 -a，或者复制 .env.example 为 .env '
+                             '填上 QMT_ACCOUNT_ID。')
         codes = positions_codes(args.account, args.account_type)
         if not codes:
             print('账号 %s 当前没有持仓，没有可订阅的标的。' % args.account)

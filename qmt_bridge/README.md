@@ -114,10 +114,12 @@ trader.connect()
 
 # 账号得自己填：`trader.get_default_account()` 读的是 ContextInfo.accountid，
 # 实机上这个版本没有这个属性，返回 None。真实账号不建议写进代码——这仓库要传
-# GitHub，硬编码进源码提交历史里就删不干净了。设一次环境变量，trade_monitor.py /
-# tick_subscribe.py 都会自动去读：
-#   PowerShell（当前会话）  $env:QMT_ACCOUNT_ID = '你的账号'
-#   PowerShell（永久生效）  [Environment]::SetEnvironmentVariable('QMT_ACCOUNT_ID','你的账号','User')
+# GitHub，硬编码进源码提交历史里就删不干净了，放 .env 里：
+#   复制项目根目录的 .env.example 为 .env，填上 QMT_ACCOUNT_ID=你的账号
+# .env 在 .gitignore 里，不会被提交；换机器把这个文件复制过去就行，不用在
+# 每台机器上重新设置。trade_monitor.py / tick_subscribe.py 启动时都会自动加载
+# （qmt_bridge.dotenv_lite.load_dotenv()）。系统里真设了同名环境变量的话那个
+# 优先，.env 只是补上没设置的。
 acc = StockAccount('你的资金账号')
 asset = trader.query_stock_asset(acc)
 print(asset.total_asset, asset.cash, asset.market_value)
@@ -146,7 +148,7 @@ trader.run_forever()
 ```
 .venv\Scripts\python.exe trade_monitor.py            # 打一次快照就退
 .venv\Scripts\python.exe trade_monitor.py --watch    # 盯着变化
-.venv\Scripts\python.exe trade_monitor.py -a 你的资金账号 -t CREDIT
+.venv\Scripts\python.exe trade_monitor.py -a 你的资金账号 -t CREDIT   # 也可以放进 .env，不用每次传
 ```
 
 字段名对齐官方（`asset.cash`、`position.can_use_volume`、`order.order_status`、

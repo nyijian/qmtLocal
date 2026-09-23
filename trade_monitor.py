@@ -25,6 +25,7 @@ import sys
 # 走桥。miniQMT 恢复之后，把下面三行换成 xtquant 的对应模块即可，
 # 本文件其余部分一个字都不用动 —— 签名和字段名是对齐的。
 from qmt_bridge import xtconstant
+from qmt_bridge.dotenv_lite import load_dotenv
 from qmt_bridge.xttrader import XtQuantTrader, XtQuantTraderCallback
 from qmt_bridge.xttype import StockAccount
 
@@ -32,10 +33,11 @@ from qmt_bridge.xttype import StockAccount
 # 本来想问桥要策略绑定的那个（trader.get_default_account()），但这个版本的
 # ContextInfo 上没有 accountid，拿不到，所以退而求其次找环境变量。
 #
-# 真实资金账号不写进代码——这仓库要传GitHub，account_id 硬编码进源码
-# 提交历史里就删不干净了。本机要长期免输 -a，设一次环境变量：
-#   PowerShell（当前会话）  $env:QMT_ACCOUNT_ID = '你的账号'
-#   PowerShell（永久生效）  [Environment]::SetEnvironmentVariable('QMT_ACCOUNT_ID','你的账号','User')
+# 真实资金账号不写进代码——这仓库要传GitHub，account_id 硬编码进源码提交
+# 历史里就删不干净了。放项目根目录的 .env 里（复制 .env.example 改一份），
+# 换机器把 .env 文件复制过去就行，不用在每台机器上重新设置系统环境变量；
+# 系统里真设了同名环境变量的话那个优先，.env 只是补上没设置的。
+load_dotenv()
 DEFAULT_ACCOUNT = os.environ.get('QMT_ACCOUNT_ID', '')
 DEFAULT_ACCOUNT_TYPE = os.environ.get('QMT_ACCOUNT_TYPE', 'STOCK')
 
@@ -117,7 +119,7 @@ def main():
     parser = argparse.ArgumentParser(description='查看 QMT 账号的交易数据')
     parser.add_argument('-a', '--account',
                         help='资金账号，不传就先问桥要策略绑定的那个，'
-                             '拿不到再退到 QMT_ACCOUNT_ID 环境变量')
+                             '拿不到再退到 .env / QMT_ACCOUNT_ID 环境变量')
     parser.add_argument('-t', '--account-type', default=DEFAULT_ACCOUNT_TYPE,
                         help='账号类型：STOCK（默认）/ CREDIT / FUTURE')
     parser.add_argument('--watch', action='store_true',
@@ -143,11 +145,11 @@ def main():
             print('用策略绑定的账号：%s（%s）' % (account.account_id, account.account_type))
         elif DEFAULT_ACCOUNT:
             account = StockAccount(DEFAULT_ACCOUNT, DEFAULT_ACCOUNT_TYPE)
-            print('桥拿不到策略绑定的账号，用 QMT_ACCOUNT_ID 环境变量：%s（%s）'
+            print('桥拿不到策略绑定的账号，用 .env / 环境变量里的 QMT_ACCOUNT_ID：%s（%s）'
                   % (account.account_id, account.account_type))
         else:
-            print('没有可用账号：桥拿不到策略绑定的账号，也没传 -a，'
-                  '也没设 QMT_ACCOUNT_ID 环境变量。三选一。')
+            print('没有可用账号：桥拿不到策略绑定的账号，也没传 -a。'
+                  '复制 .env.example 为 .env 填上账号，或者传 -a。')
             return 1
 
     print_snapshot(trader, account)
