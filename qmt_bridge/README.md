@@ -91,11 +91,11 @@ xtdata.subscribe_quote('000001.SZ', period='tick', callback=on_data)
 xtdata.run()
 ```
 
-现成的例子：`tick_subscribe.py`。
+现成的例子：`tools/tick_subscribe.py`。
 
 ```
-.venv\Scripts\python.exe tick_subscribe.py 000001.SZ 600000.SH --snapshot
-.venv\Scripts\python.exe tick_subscribe.py SH SZ --mode whole
+.venv\Scripts\python.exe tools\tick_subscribe.py 000001.SZ 600000.SH --snapshot
+.venv\Scripts\python.exe tools\tick_subscribe.py SH SZ --mode whole
 ```
 
 **3. 本地取交易数据**
@@ -143,12 +143,12 @@ trader.subscribe(acc)
 trader.run_forever()
 ```
 
-现成的例子：`trade_monitor.py`（只读，不下单）。
+现成的例子：`tools/trade_monitor.py`（只读，不下单）。
 
 ```
-.venv\Scripts\python.exe trade_monitor.py            # 打一次快照就退
-.venv\Scripts\python.exe trade_monitor.py --watch    # 盯着变化
-.venv\Scripts\python.exe trade_monitor.py -a 你的资金账号 -t CREDIT   # 也可以放进 .env，不用每次传
+.venv\Scripts\python.exe tools\trade_monitor.py            # 打一次快照就退
+.venv\Scripts\python.exe tools\trade_monitor.py --watch    # 盯着变化
+.venv\Scripts\python.exe tools\trade_monitor.py -a 你的资金账号 -t CREDIT   # 也可以放进 .env，不用每次传
 ```
 
 字段名对齐官方（`asset.cash`、`position.can_use_volume`、`order.order_status`、
@@ -158,7 +158,7 @@ trader.run_forever()
 **4. 改完两边之后跑自测**
 
 ```
-.venv\Scripts\python.exe -m qmt_bridge.桥接自测
+.venv\Scripts\python.exe tests\桥接自测.py
 ```
 
 用假的 `ContextInfo` 和假柜台把协议端到端走一遍，不需要QMT在跑，**也不碰任何真实账号**。
@@ -168,7 +168,7 @@ trader.run_forever()
 改了桥的线程模型、队列策略、连接生命周期之后，再跑一遍压测（十几秒）：
 
 ```
-.venv\Scripts\python.exe -m qmt_bridge.桥接压测
+.venv\Scripts\python.exe tests\桥接压测.py
 ```
 
 它盯的是上了盘才会咬人的那几条路：背压时行情回调线程会不会被拖住、
@@ -284,11 +284,11 @@ print('本地缓存滞后 %s 天' % gap)
 scan_gaps(['600366.SH', '600436.SH'])   # 批量看哪些代码该去「补充数据」补了
 ```
 
-现成的例子：`local_history.py`。
+现成的例子：`tools/local_history.py`。
 
 ```
-.venv\Scripts\python.exe local_history.py --gaps              # 看持仓里哪些滞后了
-.venv\Scripts\python.exe local_history.py 000300.SH -n 20     # 打印最近20条
+.venv\Scripts\python.exe tools\local_history.py --gaps              # 看持仓里哪些滞后了
+.venv\Scripts\python.exe tools\local_history.py 000300.SH -n 20     # 打印最近20条
 ```
 
 **这份缓存不保证是最新的。** 实测发现它好像只在你在QMT里主动看过/查过某个代码之后
@@ -298,7 +298,7 @@ scan_gaps(['600366.SH', '600436.SH'])   # 批量看哪些代码该去「补充数据」补了
 
 这个格式官方不公开，是拿几个已知代码反推出来的，怎么反推、验证到什么程度、
 没验证过什么，都写在 `dat_reader.py` 的模块注释里，改动或者怀疑数据不对之前先看那份。
-跑 `python -m qmt_bridge.dat读取自测` 能验一遍格式解析逻辑本身对不对（这部分不依赖
+跑 `python tests\dat读取自测.py` 能验一遍格式解析逻辑本身对不对（这部分不依赖
 真实QMT数据）加上对本机真实数据的内部一致性抽查（这部分依赖这台机器，别的机器上
 自动跳过，不算失败）。
 

@@ -93,7 +93,7 @@ qmt_mock/
 ÀıÈç£º
 
 ```
-.venv\Scripts\python.exe -m qmt_mock.runner main.py --code 600000.SH --start 20240101 --end 20240301 --seed 42
+.venv\Scripts\python.exe -m qmt_mock.runner strategies\Ë«¾ùÏßÊ¾Àı.py --code 600000.SH --start 20240101 --end 20240301 --seed 42
 ```
 
 ÃüÁîĞĞ²ÎÊı£º
@@ -119,9 +119,9 @@ Windows¿ØÖÆÌ¨Èç¹ûÖĞÎÄÊä³öÂÒÂë£¬ÊÇÖÕ¶Ë´úÂëÒ³ÎÊÌâ£¬²»ÊÇ½Å±¾ÎÊÌâ£»PowerShellÏÂ¿ÉÏÈÖ
 
 | ÎÄ¼ş | ±àÂë | Ô­Òò |
 |---|---|---|
-| ÒªÕ³½øQMT²ßÂÔ±à¼­Æ÷µÄ£¨`main.py`¡¢`qmt_client_scripts/*`£© | **GBK**£¨ÎŞBOM£©£¬Ê×ĞĞ `# coding:gbk` | QMT±à¼­Æ÷¹Ì¶¨°´GBK¶ÁĞ´£¬UTF-8µÄ½Å±¾¿½½øÈ¥Ö±½ÓÂÒÂë |
-| Ö»ÔÚ±¾µØÅÜµÄ£¨`tick_subscribe.py`¡¢`qmt_bridge/*`£© | **UTF-8£¨´øBOM£©** | ¼ûÏÂÃæÕâÌõ¿Ó |
-| `.md` | GBK | ¸ú²Ö¿âÆäÓà²¿·ÖÒ»ÖÂ |
+| ÒªÕ³½øQMT²ßÂÔ±à¼­Æ÷µÄ£¨`strategies/*`¡¢`qmt_client_scripts/*`£© | **GBK**£¨ÎŞBOM£©£¬Ê×ĞĞ `# coding:gbk` | QMT±à¼­Æ÷¹Ì¶¨°´GBK¶ÁĞ´£¬UTF-8µÄ½Å±¾¿½½øÈ¥Ö±½ÓÂÒÂë |
+| Ö»ÔÚ±¾µØÅÜµÄ£¨`tools/*`¡¢`qmt_bridge/*`£© | **UTF-8£¨´øBOM£©** | ¼ûÏÂÃæÕâÌõ¿Ó |
+| `.md` | ±¾ÎÄ¼şºÍ `qmt_bridge/README.md` ÊÇ GBK£»ĞÂĞ´µÄ£¨`README.md`¡¢`docs/*`¡¢`CLAUDE.md`£©ÊÇ UTF-8 ´ø BOM | ¼û `docs/04-¿ª·¢Ô¼¶¨.md` |
 
 **¿Ó£ºGBKÔ´ÂëÃ»·¨ÓÃ `python xxx.py` Ö±½ÓÅÜ¡£** ±¾»úµÄ Python 3.6.8£¨venv ÀïµÄÄÇ¸öºÍ
 `D:\¹ú½ğÖ¤È¯QMT½»Ò×¶Ë\bin.x64\python.exe` ±íÏÖÍêÈ«Ò»Ñù£©°ÑGBKÎÄ¼şµ±**¶¥²ã½Å±¾**½âÎöÊ±£¬

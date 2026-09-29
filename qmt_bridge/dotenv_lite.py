@@ -55,8 +55,16 @@ def load_dotenv(path=None, override=False):
     path = path or os.path.join(_project_root(), '.env')
     if not os.path.exists(path):
         return False
-    with open(path, 'r', encoding='utf-8') as f:
-        parsed = parse_dotenv(f.read())
+    # 本仓库 VSCode 默认按 GBK 存文件，`.env` 可能是 UTF-8 也可能是 GBK，
+    # 甚至是被 GBK 编辑器存坏了中文注释的 UTF-8。键值一般是 ASCII，
+    # 所以 UTF-8 解不了就退到 GBK，坏字节替换掉，不影响解析。
+    with open(path, 'rb') as f:
+        raw = f.read()
+    try:
+        text = raw.decode('utf-8-sig')
+    except UnicodeDecodeError:
+        text = raw.decode('gbk', errors='replace')
+    parsed = parse_dotenv(text)
     for key, value in parsed.items():
         if override or key not in os.environ:
             os.environ[key] = value

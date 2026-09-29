@@ -1,7 +1,7 @@
 ﻿# coding:utf-8
 """dat_reader 自测。
 
-    .venv\\Scripts\\python.exe -m qmt_bridge.dat读取自测
+    .venv\\Scripts\\python.exe tests\\dat读取自测.py
 
 分两段：
 1) 人工构造一个假 .DAT 文件，纯格式解析的往返测试——不挑机器，哪儿都能跑。

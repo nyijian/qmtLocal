@@ -1,7 +1,7 @@
 ﻿# coding:utf-8
 """dotenv_lite 自测。
 
-    .venv\\Scripts\\python.exe -m qmt_bridge.dotenv自测
+    .venv\\Scripts\\python.exe tests\\dotenv自测.py
 
 不碰真实 .env、不碰真实环境变量——用临时文件和临时键名，跑完自己清理干净。
 """

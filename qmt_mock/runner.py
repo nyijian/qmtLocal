@@ -2,7 +2,7 @@
 """不打开QMT客户端，直接在本地跑一遍QMT策略脚本的init/handlebar逻辑。
 
 用法:
-    .venv\\Scripts\\python.exe -m qmt_mock.runner main.py --code 600000.SH --start 20240101 --end 20240301
+    .venv\\Scripts\\python.exe -m qmt_mock.runner strategies\\双均线示例.py --code 600000.SH --start 20240101 --end 20240301
 """
 import argparse
 import sys

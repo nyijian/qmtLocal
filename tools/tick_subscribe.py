@@ -6,7 +6,7 @@
   2. 「模型交易」里「桥接服务」那个策略的状态是「运行中」
      （不是「策略编辑器」里点运行，见 qmt_bridge/README.md 的「怎么跑」）；
   3. 本脚本跑在项目的 .venv（py3.6）里：
-     .venv\\Scripts\\python.exe tick_subscribe.py 000001.SZ 600000.SH
+     .venv\\Scripts\\python.exe tools\\tick_subscribe.py 000001.SZ 600000.SH
 
 两种模式：
   --mode quote  （默认，推荐）按指定股票逐个 subscribe_quote(period='tick')，
@@ -14,14 +14,18 @@
   --mode whole  全推 subscribe_whole_quote，可按市场整体订阅（全市场），
                 但每次只给最新快照，不回补历史。
 
-    .venv\\Scripts\\python.exe tick_subscribe.py --positions        # 订阅当前持仓的所有标的
-    .venv\\Scripts\\python.exe tick_subscribe.py --positions -a 你的资金账号
+    .venv\\Scripts\\python.exe tools\\tick_subscribe.py --positions        # 订阅当前持仓的所有标的
+    .venv\\Scripts\\python.exe tools\\tick_subscribe.py --positions -a 你的资金账号
 
 注意：tick 推送只在交易时段产生；非交易时间订阅成功但不会有回调。
 """
 import argparse
 import datetime as dt
 import os
+import sys
+
+# 脚本在 tools/ 下，直接跑时 sys.path[0] 是 tools/，把项目根目录加进去才找得到 qmt_bridge
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 走桥。miniQMT 恢复之后，把下面这几行换成 xtquant 对应模块即可，
 # 本文件其余部分一个字都不用动 —— 两者签名和返回值形状是对齐的。

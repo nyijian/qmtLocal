@@ -1,0 +1,11 @@
+﻿# .venv313（Python 3.13）的依赖：走桥取 QMT 行情 + akshare 取财务/龙虎榜/两融。
+# 3.6 的 .venv 是给 QMT 策略和 qmt_mock 用的，跟这份无关。
+#
+# 建环境（官方 PyPI 实测会超时，走清华镜像）：
+#   uv venv .venv313 --python 3.13
+#   $env:UV_HTTP_TIMEOUT='180'
+#   uv pip install --python .venv313\Scripts\python.exe -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements-data.txt
+#
+# akshare 是爬网页的，网站一改版接口就可能坏，所以钉死版本；坏了再升级。
+akshare==1.18.97
+pandas==3.0.6

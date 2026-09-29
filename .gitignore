@@ -1,7 +1,9 @@
 .venv/
+.venv313/
 __pycache__/
 *.pyc
 real_data/
+logs/
 
 # 账号、密码这类真实值放这里，不提交。模板见 .env.example。
 .env

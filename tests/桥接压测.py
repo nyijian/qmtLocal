@@ -1,7 +1,7 @@
 ﻿# coding:utf-8
 """桥接压测：专挑上了盘才会咬人的失效路径。
 
-    .venv\\Scripts\\python.exe -m qmt_bridge.桥接压测
+    .venv\\Scripts\\python.exe tests\\桥接压测.py
 
 跟 `桥接自测` 分开放：那个是快速冒烟（几秒），这个跑十几秒，改了桥的线程模型、
 队列策略、连接生命周期之后再跑。

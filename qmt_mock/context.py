@@ -1,14 +1,17 @@
 # coding:gbk
 """不启动QMT客户端，本地跑一遍策略脚本init/handlebar逻辑用的模拟上下文。
 
-只实现了main.py这类脚本实际用到的QMT接口子集（get_market_data_ex/get_bar_timetag/
+只实现了strategies/双均线示例.py这类脚本实际用到的QMT接口子集（get_market_data_ex/get_bar_timetag/
 draw_text/passorder/get_trade_detail_data），不是QMT ContextInfo的完整实现。
 委托一律按下单当根K线的收盘价成交，只用于跑通策略逻辑、暴露语法/逻辑错误，
 不是可用于评估策略收益的真实回测引擎，回测结果仍需回到QMT客户端里跑。
 """
 import datetime as dt
+import json
 
 from .data import FIELDS, SyntheticMarket, trading_calendar
+
+_print = print  # 真实内置 print，不被注入的 pretty_print 覆盖
 
 STOCK_BUY = 23
 STOCK_SELL = 24
@@ -78,16 +81,20 @@ class MockContextInfo(object):
         date = self.calendar[barpos]
         return int(dt.datetime.strptime(date, "%Y%m%d").timestamp() * 1000)
 
-    def get_market_data_ex(self, field_list=None, stock_list=None, end_time="", period="1d",
-                            count=-1, dividend_type="none", fill_data=True, subscribe=True):
+    def get_market_data_ex(self, field_list=None, stock_list=None, start_time="", end_time="",
+                            period="1d", count=-1, dividend_type="none", fill_data=True,
+                            subscribe=True):
         field_list = list(field_list) if field_list else list(FIELDS)
         stock_list = stock_list or [self.stockcode + "." + self.market]
         end_date = (end_time or self.calendar[self.barpos])[:8]
+        start_date = start_time[:8] if start_time else None
 
         result = {}
         for code in stock_list:
             df = self.market_data.bars(code)
             sliced = df[df.index <= end_date]
+            if start_date:
+                sliced = sliced[sliced.index >= start_date]
             if count and count > 0:
                 sliced = sliced.tail(count)
             result[code] = sliced[field_list]
@@ -124,8 +131,22 @@ def build_globals(context):
             return context.account.position_detail()
         return []
 
+    def pretty_print(*args, **kwargs):
+        """将 dict/list 参数自动排版成缩进 JSON 再打印，其它类型不变。
+        只影响本地 qmt_mock 运行时的终端显示，不需要修改策略源代码。
+        """
+        def fmt(a):
+            if isinstance(a, (dict, list)):
+                try:
+                    return json.dumps(a, ensure_ascii=False, indent=2)
+                except TypeError:
+                    return a
+            return a
+        _print(*(fmt(a) for a in args), **kwargs)
+
     return {
         "timetag_to_datetime": timetag_to_datetime,
         "passorder": passorder,
         "get_trade_detail_data": get_trade_detail_data,
+        "print": pretty_print,
     }

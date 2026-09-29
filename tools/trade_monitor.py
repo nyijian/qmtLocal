@@ -7,10 +7,10 @@
      （不是「策略编辑器」里点运行 —— 那样起的实例转眼就被拆掉，见 qmt_bridge/README.md）；
   3. 本脚本跑在项目的 .venv（py3.6）里。
 
-    .venv\\Scripts\\python.exe trade_monitor.py                 # 打一次快照就退
-    .venv\\Scripts\\python.exe trade_monitor.py --watch         # 盯着不走，有变化就打
-    .venv\\Scripts\\python.exe trade_monitor.py -a 55004374     # 指定账号
-    .venv\\Scripts\\python.exe trade_monitor.py -t CREDIT       # 融资融券账号
+    .venv\\Scripts\\python.exe tools\\trade_monitor.py                 # 打一次快照就退
+    .venv\\Scripts\\python.exe tools\\trade_monitor.py --watch         # 盯着不走，有变化就打
+    .venv\\Scripts\\python.exe tools\\trade_monitor.py -a 55004374     # 指定账号
+    .venv\\Scripts\\python.exe tools\\trade_monitor.py -t CREDIT       # 融资融券账号
 
 不传 -a 就问桥要策略在 QMT 界面上绑的那个账号。
 
@@ -21,6 +21,9 @@ import argparse
 import datetime as dt
 import os
 import sys
+
+# 脚本在 tools/ 下，直接跑时 sys.path[0] 是 tools/，把项目根目录加进去才找得到 qmt_bridge
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 走桥。miniQMT 恢复之后，把下面三行换成 xtquant 的对应模块即可，
 # 本文件其余部分一个字都不用动 —— 签名和字段名是对齐的。

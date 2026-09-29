@@ -18,7 +18,7 @@
     from qmt_bridge.dat_reader import read_daily
 
     df, gap = read_daily('000300.SH')                    # 用默认 datadir
-    df, gap = read_daily('600366.SH', datadir=r'D:\...')  # 指定 datadir（比如 userdata_mini）
+    df, gap = read_daily('600366.SH', datadir=r'D:\\...')  # 指定 datadir（比如 userdata_mini）
     print(df.tail())
     print('最后一条离今天 %d 天' % gap)
 
@@ -56,7 +56,7 @@
    一条记录换算出的交易日正好是当天、开高低收四个值全相等（只有开盘那一笔），
    跟"今天盘中桥取到的第一口价"完全对上。
 4. 找"昨收"：某条记录换算出的收盘价，原样出现在下一条记录的某个固定偏移里——
-   这个偏移就是 off=52。这条内部一致性也是 `dat格式自测.py` 拿来当断言的。
+   这个偏移就是 off=52。这条内部一致性也是 `tests/dat读取自测.py` 拿来当断言的。
 5. 换成持仓里真实的股票（600366.SH）复核，今天收盘价对上桥当天取到的现价；
    再换 SZ 市场（000001.SZ）复核，价格区间也在合理范围——确认格式两个市场通用。
 
@@ -78,6 +78,7 @@ DEFAULT_DATADIR = r'D:\国金证券QMT交易端\datadir'
 HEADER_SIZE = 8
 RECORD_SIZE = 64
 HEADER_SENTINEL = b'\xfe\xff\xff\xff\xff\xff\xff\x7f'
+_EPOCH = datetime.datetime(1970, 1, 1)
 
 
 class DatFormatError(Exception):
@@ -98,30 +99,34 @@ def dat_path(code, datadir=None, period_dir='86400'):
     return os.path.join(datadir, market, period_dir, '%s.DAT' % inst)
 
 
-def _read_records(path):
+def _read_records(path, last_n=None):
+    """last_n 给了就只读文件末尾那几条——全市场几千只一起扫的时候，
+    不用把每只二十年的历史都读进来。"""
     with open(path, 'rb') as f:
-        data = f.read()
-
-    if len(data) < HEADER_SIZE:
-        raise DatFormatError('文件太短，连头都不够：%s' % path)
-    header = data[:HEADER_SIZE]
-    if header != HEADER_SENTINEL:
-        # 不同版本/周期的头可能不一样，不确定就别装作确定，只是提醒一声。
-        # 数据部分该怎么切还怎么切，不因为这个就拒绝读。
-        pass
-
-    body = data[HEADER_SIZE:]
-    if len(body) % RECORD_SIZE != 0:
-        raise DatFormatError(
-            '记录对不齐 64 字节（文件大小=%d，头=%d，余数=%d），格式可能变了，'
-            '别信下面读出来的东西：%s' % (len(data), HEADER_SIZE, len(body) % RECORD_SIZE, path))
+        size = os.fstat(f.fileno()).st_size
+        if size < HEADER_SIZE:
+            raise DatFormatError('文件太短，连头都不够：%s' % path)
+        if (size - HEADER_SIZE) % RECORD_SIZE != 0:
+            raise DatFormatError(
+                '记录对不齐 64 字节（文件大小=%d，头=%d，余数=%d），格式可能变了，'
+                '别信下面读出来的东西：%s' % (size, HEADER_SIZE,
+                                          (size - HEADER_SIZE) % RECORD_SIZE, path))
+        header = f.read(HEADER_SIZE)
+        if header != HEADER_SENTINEL:
+            # 不同版本/周期的头可能不一样，不确定就别装作确定，只是提醒一声。
+            # 数据部分该怎么切还怎么切，不因为这个就拒绝读。
+            pass
+        if last_n is not None:
+            f.seek(max(HEADER_SIZE, size - last_n * RECORD_SIZE))
+        body = f.read()
 
     n = len(body) // RECORD_SIZE
     rows = []
     for i in range(n):
         rec = body[i * RECORD_SIZE:(i + 1) * RECORD_SIZE]
         ts = struct.unpack_from('<i', rec, 0)[0]
-        date = (datetime.datetime.utcfromtimestamp(ts) + datetime.timedelta(hours=8)).date()
+        # 跟 utcfromtimestamp(ts) + 8小时 等价；那个函数 3.12 起弃用，这样写 3.6 和 3.13 都没警告
+        date = (_EPOCH + datetime.timedelta(seconds=ts, hours=8)).date()
         o, h, l, c = (struct.unpack_from('<i', rec, k)[0] / 1000.0 for k in (4, 8, 12, 16))
         volume = struct.unpack_from('<i', rec, 24)[0]
         amount = struct.unpack_from('<q', rec, 32)[0]
@@ -133,12 +138,12 @@ def _read_records(path):
     return rows
 
 
-def read_daily_raw(code, datadir=None):
-    """不依赖 pandas，返回按日期升序的 dict 列表。"""
+def read_daily_raw(code, datadir=None, last_n=None):
+    """不依赖 pandas，返回按日期升序的 dict 列表。last_n 只取最后几条。"""
     path = dat_path(code, datadir)
     if not os.path.exists(path):
         raise FileNotFoundError('本地没有这个代码的日线缓存：%s' % path)
-    return _read_records(path)
+    return _read_records(path, last_n)
 
 
 def read_daily(code, datadir=None):

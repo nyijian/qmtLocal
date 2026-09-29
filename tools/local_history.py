@@ -1,10 +1,10 @@
 ﻿# coding:utf-8
 """不走桥，直接读大QMT本地缓存的日线数据。收盘后、桥挂了的时候用这个。
 
-    .venv\\Scripts\\python.exe local_history.py                       # 默认几只持仓
-    .venv\\Scripts\\python.exe local_history.py 000300.SH 600000.SH   # 指定代码
-    .venv\\Scripts\\python.exe local_history.py --gaps                # 只看哪些代码该去补数据了
-    .venv\\Scripts\\python.exe local_history.py -n 20 600366.SH       # 打印最近 20 条
+    .venv\\Scripts\\python.exe tools\\local_history.py                       # 默认几只持仓
+    .venv\\Scripts\\python.exe tools\\local_history.py 000300.SH 600000.SH   # 指定代码
+    .venv\\Scripts\\python.exe tools\\local_history.py --gaps                # 只看哪些代码该去补数据了
+    .venv\\Scripts\\python.exe tools\\local_history.py -n 20 600366.SH       # 打印最近 20 条
 
 前提只有一个：QMT 装在本机、datadir 里有这个代码的日线缓存。QMT 开不开、桥通不通，
 跟这个完全没关系——这条路读的是磁盘上的文件，见 qmt_bridge/dat_reader.py 顶部的说明。
@@ -14,7 +14,11 @@
 「补充数据」手动点一下，然后再跑这个脚本。
 """
 import argparse
+import os
 import sys
+
+# 脚本在 tools/ 下，直接跑时 sys.path[0] 是 tools/，把项目根目录加进去才找得到 qmt_bridge
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from qmt_bridge import dat_reader
 

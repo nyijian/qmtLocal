@@ -1,7 +1,7 @@
 ﻿# coding:utf-8
 """桥接层自测：不依赖 QMT，用假 ContextInfo 把协议端到端跑一遍。
 
-    .venv\\Scripts\\python.exe -m qmt_bridge.桥接自测
+    .venv\\Scripts\\python.exe tests\\桥接自测.py
 
 改动桥两侧任何一边之后都跑一次。真连 QMT 之前，这个能把协议、序列化、
 订阅号路由、字段翻译、断线清理这些问题先挡掉。
