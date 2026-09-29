@@ -17,6 +17,8 @@
       finance/lrb/20260630.csv      利润表摘要
       finance/xjll/20260630.csv     现金流量表摘要
       lhb/2026-09.csv               龙虎榜明细，一个月一个文件（同一只股票同一天可能因不同上榜原因出现多行）
+      lhb_jg/2026-09.csv            机构专用席位买卖：每只上榜股的机构买入/卖出额、买卖家数
+      lhb_yyb/2026-09.csv           活跃营业部：每个营业部每天的买入/卖出额（含沪股通/深股通专用）
       margin/summary_sse.csv        沪市两融汇总，每天一行
       margin/summary_szse.csv       深市两融汇总，每天一行
       margin/detail_sse/20260924.csv   沪市两融个股明细，一天一个文件
@@ -227,23 +229,31 @@ def fetch_finance(start: dt.date, today: dt.date, force: bool, pause: float) -> 
                 log('  %s %s：%d 行' % (name, p, len(df)))
 
 
+LHB_TABLES = {
+    'lhb': ('龙虎榜', ak.stock_lhb_detail_em),          # 个股上榜明细（含东财「解读」标签、上榜后涨跌）
+    'lhb_jg': ('机构买卖', ak.stock_lhb_jgmmtj_em),      # 每只上榜股的机构专用席位买卖金额、家数
+    'lhb_yyb': ('活跃营业部', ak.stock_lhb_hyyyb_em),    # 每个营业部每天的买卖金额（含沪深股通专用）
+}
+
+
 def fetch_lhb(start: dt.date, today: dt.date, force: bool, pause: float) -> None:
     months = pd.period_range(start, today, freq='M')
-    log('龙虎榜：%d 个月（%s ~ %s）' % (len(months), months[0], months[-1]))
-    for m in months:
-        path = os.path.join(OUT, 'lhb', '%s.csv' % m)
-        current = m == pd.Period(today, freq='M')
-        if os.path.exists(path) and not force and not current:
-            continue
-        a = max(m.start_time.date(), start)
-        b = min(m.end_time.date(), today)
-        if not trading_days(a, b):          # 区间里没有交易日时 akshare 会抛 TypeError
-            continue
-        df = fetch('龙虎榜 %s' % m, lambda: ak.stock_lhb_detail_em(
-            start_date=a.strftime('%Y%m%d'), end_date=b.strftime('%Y%m%d')), pause=pause)
-        if df is not None and len(df):
-            save(df, path)
-            log('  %s：%d 行' % (m, len(df)))
+    log('龙虎榜：%d 个月（%s ~ %s）× %d 张表' % (len(months), months[0], months[-1], len(LHB_TABLES)))
+    for folder, (label, fn) in LHB_TABLES.items():
+        for m in months:
+            path = os.path.join(OUT, folder, '%s.csv' % m)
+            current = m == pd.Period(today, freq='M')
+            if os.path.exists(path) and not force and not current:
+                continue
+            a = max(m.start_time.date(), start)
+            b = min(m.end_time.date(), today)
+            if not trading_days(a, b):          # 区间里没有交易日时 akshare 会抛 TypeError
+                continue
+            df = fetch('%s %s' % (label, m), lambda fn=fn: fn(
+                start_date=a.strftime('%Y%m%d'), end_date=b.strftime('%Y%m%d')), pause=pause)
+            if df is not None and len(df):
+                save(df, path)
+                log('  %s %s：%d 行' % (label, m, len(df)))
 
 
 def fetch_margin(start: dt.date, detail_start: dt.date, today: dt.date, force: bool,
