@@ -9,3 +9,7 @@
 # akshare 是爬网页的，网站一改版接口就可能坏，所以钉死版本；坏了再升级。
 akshare==1.18.97
 pandas==3.0.6
+
+# tools/ai_trader.py 调 Claude API 用的官方 SDK。没像 akshare 那样钉死版本——
+# 这是官方 SDK，不是爬网页，没有「网站改版就坏」那层风险，装最新的就行。
+anthropic

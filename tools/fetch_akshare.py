@@ -1,11 +1,13 @@
 ﻿# coding:utf-8
-"""用 akshare 下载财务、龙虎榜、融资融券数据到 real_data/akshare/，增量更新。
+"""用 akshare 下载财务、龙虎榜、融资融券、涨停池、ETF 数据到 real_data/akshare/，增量更新。
 
 **只在 .venv313 下运行**（akshare 需要新版 Python），可以用 3.6 装不上的语法。
 
-    .venv313\\Scripts\\python.exe tools\\fetch_akshare.py                      # 三类都下：近 5 年，两融个股明细近 3 年
+    .venv313\\Scripts\\python.exe tools\\fetch_akshare.py                      # 四类都下：近 5 年，两融个股明细近 3 年，涨停池近 30 天
     .venv313\\Scripts\\python.exe tools\\fetch_akshare.py finance lhb          # 只下其中几类
     .venv313\\Scripts\\python.exe tools\\fetch_akshare.py margin --detail-years 5   # 两融明细也要 5 年
+    .venv313\\Scripts\\python.exe tools\\fetch_akshare.py zt_pool --zt-days 60     # 涨停池多拉点天数
+    .venv313\\Scripts\\python.exe tools\\fetch_akshare.py etf --etf-years 10       # ETF 历史行情（不在默认四类里，单独跑）
     .venv313\\Scripts\\python.exe tools\\fetch_akshare.py --force              # 已有的也重下
 
 落盘位置（CSV，UTF-8 带 BOM，Excel 能直接打开）。根目录取 .env 里的 QMTLOCAL_DATA_DIR
@@ -23,6 +25,10 @@
       margin/summary_szse.csv       深市两融汇总，每天一行
       margin/detail_sse/20260924.csv   沪市两融个股明细，一天一个文件
       margin/detail_szse/20260924.csv  深市两融个股明细
+      zt_pool/20260924.csv          涨停股池，一天一个文件（含连板数、所属行业等）
+      zt_pool_zbgc/20260924.csv     炸板股池，一天一个文件
+      etf/etf_list.csv              全市场 ETF 代码/名称/最新价快照（新浪），只存当前这一份，不按日期存
+      etf_hist/510300.csv           单只 ETF 近 --etf-years 年的日线行情（开高低收、成交量额、换手率），一只一个文件
 
 读回来时股票代码要按字符串读，否则前导 0 会丢：
     pd.read_csv(path, dtype={'股票代码': str})     # 龙虎榜是 '代码'，两融明细是 '标的证券代码' / '证券代码'
@@ -32,6 +38,15 @@
   * 龙虎榜：当月每次都重下，已经结束的月份文件存在就跳过。
   * 两融明细/深市汇总：按交易日逐日下，文件或日期已存在就跳过。当天的数据要到下一个交易日才公布，只下到昨天。
   * 沪市汇总：一次请求能取整段，每次都整段重下。
+  * 涨停池/炸板池：按交易日逐日下，文件存在且不是当天就跳过；当天的文件每次都重下
+    （收盘前查到的是半天的数据，不能当成最终结果存死）。只回看 `--zt-days` 天，不是 `--years`
+    那几年——这是给近两周热点扫描用的，没必要囤历史。
+  * ETF：列表每次都重新存一份（当前快照，不是历史）。每只 ETF 的历史行情整只重下
+    （`fund_etf_hist_em` 一次请求就能拿整段，不是逐日接口，不用管"补缺"），但本地文件
+    最后一天如果离今天不超过 3 天就跳过，省得每次都把全部 ETF 重新拉一遍。
+    **ETF 的"份额"没有历史查询接口，这里不下**——akshare 只有
+    `fund_etf_spot_em` 这个当前快照能看最新份额，要跟踪份额变化只能从现在开始
+    每天存一次快照自己攒，这个单独算一类，还没做。
 失败的请求会重试 3 次，还不行就记下来继续，最后汇总打印；再跑一次就会补上。
 
 网络：
@@ -344,14 +359,149 @@ def _merge_szse(sz: pd.DataFrame, rows: list, path: str) -> pd.DataFrame:
     return sz
 
 
+# ---------------------------------------------------------------- 涨停/炸板池
+
+def _fetch_zbgc(key: str, pause: float) -> object:
+    """炸板股池只认"最近一段交易日"，查太老的日子必定报 ValueError（实测大概 25 个
+    交易日左右，akshare 没写死数字、也没必要帮它记一个可能随版本变的魔数）。
+    返回 df；'cutoff' 表示踩到这个硬限制，调用方据此停手，别当成普通失败重试——
+    重试没用，只会白白再报 3 次错。"""
+    for attempt in range(1, 3):
+        try:
+            df = ak.stock_zt_pool_zbgc_em(date=key)
+            time.sleep(pause)
+            return df
+        except ValueError as e:
+            if '交易日' in str(e):
+                return 'cutoff'
+            if attempt == 2:
+                failures.append('炸板池 %s: ValueError: %s' % (key, str(e)[:120]))
+                log('  失败 炸板池 %s（ValueError）' % key)
+                return None
+            time.sleep(pause)
+        except Exception as e:
+            if attempt == 2:
+                failures.append('炸板池 %s: %s: %s' % (key, type(e).__name__, str(e)[:120]))
+                log('  失败 炸板池 %s（%s）' % (key, type(e).__name__))
+                return None
+            time.sleep(pause * 2)
+    return None
+
+
+def fetch_zt_pool(zt_days: int, today: dt.date, force: bool, pause: float) -> None:
+    """涨停池 + 炸板池：逐日一个文件。只回看 zt_days 天——这俩是给近两周热点扫描用的，
+    不是财务/两融那种要囤多年历史的数据，默认窗口小很多。"""
+    start = today - dt.timedelta(days=int(zt_days * 1.6))   # 多留一截，扣掉周末/假期还够 zt_days 个交易日
+    days = trading_days(start, today)[-zt_days:] if zt_days else trading_days(start, today)
+    if not days:
+        log('涨停池：回看区间里没有交易日')
+        return
+    log('涨停池/炸板池：%d 个交易日（%s ~ %s）' % (len(days), days[0], days[-1]))
+    breaker_zt = Breaker('涨停池')
+    done_zt = done_zb = 0
+
+    # 涨停池没有"最近N天"的限制，顺着时间正常补。
+    try:
+        for d in days:
+            key = d.strftime('%Y%m%d')
+            current = d == today     # 当天收盘前查到的是半天数据，每次都重下，不能当成最终结果存死
+            zt_path = os.path.join(OUT, 'zt_pool', key + '.csv')
+            if force or current or not os.path.exists(zt_path):
+                df = fetch('涨停池 %s' % key, lambda key=key: ak.stock_zt_pool_em(date=key),
+                           pause=pause, breaker=breaker_zt)
+                if df is not None and len(df):
+                    save(df, zt_path)
+                    done_zt += 1
+    except Blocked as e:
+        log('  ！' + str(e))
+        failures.append(str(e))
+
+    # 炸板池反过来从最近的日子往回补，一碰到"查太老"的硬限制就停——
+    # 顺着时间正着查的话，会把limit之外的每一天都当成失败重试一遍，白费请求。
+    for d in reversed(days):
+        key = d.strftime('%Y%m%d')
+        current = d == today
+        zb_path = os.path.join(OUT, 'zt_pool_zbgc', key + '.csv')
+        if not (force or current or not os.path.exists(zb_path)):
+            continue
+        result = _fetch_zbgc(key, pause)
+        if isinstance(result, str) and result == 'cutoff':
+            log('  炸板池接口只认最近一段交易日，%s 及更早的查不到，这是 akshare 接口的硬限制，不是故障，剩下的天数跳过'
+                % key)
+            break
+        if result is not None and len(result):
+            save(result, zb_path)
+            done_zb += 1
+
+    log('  涨停池：新下/更新 %d 天；炸板池：新下/更新 %d 天' % (done_zt, done_zb))
+
+
+# ---------------------------------------------------------------- ETF
+
+def _etf_hist_is_fresh(path: str, today: dt.date) -> bool:
+    """本地文件最后一天离今天不超过 3 天（容忍周末/假期）就算新鲜，不用重下整段。"""
+    if not os.path.exists(path):
+        return False
+    try:
+        last = pd.read_csv(path, usecols=['日期'], dtype=str)['日期'].iloc[-1]
+        last_date = dt.datetime.strptime(last, '%Y-%m-%d').date()
+    except Exception:
+        return False
+    return (today - last_date).days <= 3
+
+
+def fetch_etf(etf_years: float, today: dt.date, force: bool, pause: float) -> None:
+    """ETF 列表 + 每只 ETF 近 etf_years 年的日线行情（价格，不是份额，见模块开头说明）。"""
+    etf_list = fetch('ETF列表', lambda: ak.fund_etf_category_sina(symbol='ETF基金'), pause=pause)
+    if etf_list is None or not len(etf_list):
+        log('  ！拿不到 ETF 列表，这一类直接跳过')
+        return
+    save(etf_list, os.path.join(OUT, 'etf', 'etf_list.csv'))
+
+    code_col = '代码' if '代码' in etf_list.columns else etf_list.columns[0]
+    # 新浪的代码带 sz/sh 前缀（如 'sz159998'），fund_etf_hist_em 的 symbol 只认后面 6 位数字。
+    codes = sorted({str(c)[-6:] for c in etf_list[code_col] if str(c)[-6:].isdigit()})
+    log('ETF：列表 %d 只，近 %.0f 年历史（%s ~ %s）' % (len(codes), etf_years,
+        (today - dt.timedelta(days=int(etf_years * 365.25))).strftime('%Y%m%d'), today.strftime('%Y%m%d')))
+
+    start = (today - dt.timedelta(days=int(etf_years * 365.25))).strftime('%Y%m%d')
+    end = today.strftime('%Y%m%d')
+    folder = os.path.join(OUT, 'etf_hist')
+    breaker = Breaker('ETF历史行情')
+    done = skipped = 0
+    try:
+        for i, code in enumerate(codes, 1):
+            path = os.path.join(folder, code + '.csv')
+            if not force and _etf_hist_is_fresh(path, today):
+                skipped += 1
+                continue
+            df = fetch('ETF历史 %s' % code, lambda code=code: ak.fund_etf_hist_em(
+                symbol=code, period='daily', start_date=start, end_date=end, adjust=''),
+                pause=pause, breaker=breaker)
+            if df is not None and len(df):
+                save(df, path)
+                done += 1
+            if i % 100 == 0:
+                log('  ETF历史进度 %d/%d（新下 %d，跳过 %d）' % (i, len(codes), done, skipped))
+    except Blocked as e:
+        log('  ！' + str(e))
+        failures.append(str(e))
+    log('  ETF历史：新下/更新 %d 只，已新鲜跳过 %d 只（共 %d 只）' % (done, skipped, len(codes)))
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description='akshare 财务/龙虎榜/两融数据下载（增量）')
-    parser.add_argument('kinds', nargs='*', choices=['finance', 'lhb', 'margin'],
-                        help='要下哪几类，不写就是全部')
+    parser = argparse.ArgumentParser(description='akshare 财务/龙虎榜/两融/涨停池/ETF数据下载（增量）')
+    parser.add_argument('kinds', nargs='*', choices=['finance', 'lhb', 'margin', 'zt_pool', 'etf'],
+                        help='要下哪几类，不写就是默认四类（finance/lhb/margin/zt_pool）；'
+                             'etf 比较重，不在默认里，要单独指定')
     parser.add_argument('--years', type=float, default=5,
                         help='财务、龙虎榜、两融汇总往前取几年，默认 5')
     parser.add_argument('--detail-years', type=float, default=3,
                         help='两融个股明细往前取几年，默认 3（一天一次请求，深交所还要放慢）')
+    parser.add_argument('--zt-days', type=int, default=30,
+                        help='涨停池/炸板池往前取多少个交易日，默认 30（近两周热点扫描够用，不用拉多年历史）')
+    parser.add_argument('--etf-years', type=float, default=10,
+                        help='每只 ETF 历史行情往前取几年，默认 10')
     parser.add_argument('--sleep', type=float, default=0.5, help='每次请求后停多少秒，默认 0.5')
     parser.add_argument('--szse-sleep', type=float, default=3.0,
                         help='深交所请求之间停多少秒，默认 3（它有反爬）')
@@ -367,9 +517,9 @@ def main() -> None:
     today = dt.date.today()
     start = today - dt.timedelta(days=int(args.years * 365.25))
     detail_start = max(start, today - dt.timedelta(days=int(args.detail_years * 365.25)))
-    kinds = args.kinds or ['finance', 'lhb', 'margin']
-    log('下载 %s，范围 %s ~ %s（两融明细从 %s 起），输出到 %s'
-        % ('/'.join(kinds), start, today, detail_start, OUT))
+    kinds = args.kinds or ['finance', 'lhb', 'margin', 'zt_pool']
+    log('下载 %s，范围 %s ~ %s（两融明细从 %s 起，涨停池近 %d 个交易日），输出到 %s'
+        % ('/'.join(kinds), start, today, detail_start, args.zt_days, OUT))
 
     warn_if_other_host_active()
     t0 = time.time()
@@ -381,6 +531,10 @@ def main() -> None:
             fetch_lhb(start, today, args.force, args.sleep)
         if 'margin' in kinds:
             fetch_margin(start, detail_start, today, args.force, args.sleep, args.szse_sleep)
+        if 'zt_pool' in kinds:
+            fetch_zt_pool(args.zt_days, today, args.force, args.sleep)
+        if 'etf' in kinds:
+            fetch_etf(args.etf_years, today, args.force, args.sleep)
     except BaseException:
         write_last_run('interrupted', kinds, t0)
         raise
