@@ -224,6 +224,16 @@ bridge_server.cancel = broker.cancel
 bridge_server.TRADE_POLL_INTERVAL = 0.15          # 自测里别等满一秒
 
 
+def fake_etf_iopv(code):
+    if code == 'BAD.SH':
+        raise RuntimeError('没有这个 ETF')
+    return {'510300.SH': 4.3298}.get(code, 1.0)
+
+
+bridge_server.get_etf_iopv = fake_etf_iopv
+bridge_server.get_etf_info = lambda code: {'etfCode': code[:6], 'stocks': {}}
+
+
 fake = FakeContext()
 PORT = 58698                       # 跟默认端口错开，免得撞上真在跑的桥
 server = bridge_server.BridgeServer(fake, '127.0.0.1', PORT)
@@ -270,6 +280,12 @@ check('DataFrame 取值', float(got['close'].iloc[-1]) == 10.3, got)
 
 detail = xtdata.get_instrument_detail('000001.SZ')
 check('get_instrument_detail 中文不乱码', detail['InstrumentName'] == '测试', detail)
+
+check('get_etf_iopv 单只', xtdata.get_etf_iopv('510300.SH') == 4.3298)
+iopv = xtdata.get_etf_iopv(['510300.SH', 'BAD.SH'])
+check('get_etf_iopv 批量，出错的给 None', iopv == {'510300.SH': 4.3298, 'BAD.SH': None}, iopv)
+info = xtdata.get_etf_info('510300.SH')
+check('get_etf_info', info.get('etfCode') == '510300', info)
 
 print('2) 逐笔推送（subscribe_quote）')
 ticks = []

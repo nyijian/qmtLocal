@@ -3,11 +3,12 @@
 
 **只在 .venv313 下运行**（akshare 需要新版 Python），可以用 3.6 装不上的语法。
 
-    .venv313\\Scripts\\python.exe tools\\fetch_akshare.py                      # 四类都下：近 5 年，两融个股明细近 3 年，涨停池近 30 天
+    .venv313\\Scripts\\python.exe tools\\fetch_akshare.py                      # 默认五类都下：近 5 年，两融个股明细近 3 年，涨停池近 30 天，ETF 份额
     .venv313\\Scripts\\python.exe tools\\fetch_akshare.py finance lhb          # 只下其中几类
     .venv313\\Scripts\\python.exe tools\\fetch_akshare.py margin --detail-years 5   # 两融明细也要 5 年
     .venv313\\Scripts\\python.exe tools\\fetch_akshare.py zt_pool --zt-days 60     # 涨停池多拉点天数
-    .venv313\\Scripts\\python.exe tools\\fetch_akshare.py etf --etf-years 10       # ETF 历史行情（不在默认四类里，单独跑）
+    .venv313\\Scripts\\python.exe tools\\fetch_akshare.py etf_share --share-days 120  # ETF 份额，上交所多回补点天数
+    .venv313\\Scripts\\python.exe tools\\fetch_akshare.py etf --etf-years 10       # ETF 历史行情（不在默认里，单独跑）
     .venv313\\Scripts\\python.exe tools\\fetch_akshare.py --force              # 已有的也重下
 
 落盘位置（CSV，UTF-8 带 BOM，Excel 能直接打开）。根目录取 .env 里的 QMTLOCAL_DATA_DIR
@@ -29,6 +30,7 @@
       zt_pool_zbgc/20260924.csv     炸板股池，一天一个文件
       etf/etf_list.csv              全市场 ETF 代码/名称/最新价快照（新浪），只存当前这一份，不按日期存
       etf_hist/510300.csv           单只 ETF 近 --etf-years 年的日线行情（开高低收、成交量额、换手率），一只一个文件
+      etf_share/20261012.csv        沪深 ETF 当日收盘份额，一天一个文件：代码、名称、市场(SH/SZ)、份额(份)、来源
 
 读回来时股票代码要按字符串读，否则前导 0 会丢：
     pd.read_csv(path, dtype={'股票代码': str})     # 龙虎榜是 '代码'，两融明细是 '标的证券代码' / '证券代码'
@@ -44,9 +46,17 @@
   * ETF：列表每次都重新存一份（当前快照，不是历史）。每只 ETF 的历史行情整只重下
     （`fund_etf_hist_em` 一次请求就能拿整段，不是逐日接口，不用管"补缺"），但本地文件
     最后一天如果离今天不超过 3 天就跳过，省得每次都把全部 ETF 重新拉一遍。
-    **ETF 的"份额"没有历史查询接口，这里不下**——akshare 只有
-    `fund_etf_spot_em` 这个当前快照能看最新份额，要跟踪份额变化只能从现在开始
-    每天存一次快照自己攒，这个单独算一类，还没做。
+    份额不在这一类里，见下面的 etf_share。
+  * ETF 份额（etf_share）：给 etf_overview.py 算每天的净申购/赎回用。
+    - 上交所：官方接口 `fund_etf_scale_sse(date)` 能按日期查，回补近 `--share-days` 个交易日，
+      文件里已经有沪市行就跳过。当天的要收盘后才公布，查到空表不算失败。
+    - 深交所：官方只给「当前规模」，没有历史、也没有日期列，只能每天存一份攒起来。
+      日期按「今天之前的最近一个交易日」记（实测盘中查到的就是那天收盘份额）；
+      **交易日 15 点以后不存深市**——那时深交所可能已经换成当天的数，日期对不上。
+      akshare 的 `fund_etf_scale_szse` 在新版 pandas 下报 TypeError，这里自己请求。
+    - 不用东方财富 `fund_etf_spot_em` 的「最新份额」：实测同一时刻有的是 T-1、有的是 T-2，口径不齐。
+    - etf_overview.py 跑的时候也会用 QMT 合约信息里的份额（TotalVolume，官方 T-1，带日期）
+      补进同一个目录，只补缺的代码；两边数字实测一致。
 失败的请求会重试 3 次，还不行就记下来继续，最后汇总打印；再跑一次就会补上。
 
 网络：
@@ -62,6 +72,7 @@
 """
 import argparse
 import datetime as dt
+import io
 import json
 import os
 import re
@@ -74,6 +85,7 @@ warnings.filterwarnings('ignore')        # akshare 内部的 pandas FutureWarnin
 
 import akshare as ak
 import pandas as pd
+import requests
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -147,6 +159,10 @@ def save(df: pd.DataFrame, path: str) -> None:
     df = df.drop(columns=['序号'], errors='ignore')
     tmp = path + '.tmp'
     df.to_csv(tmp, index=False, encoding='utf-8-sig')
+    replace_retry(tmp, path)
+
+
+def replace_retry(tmp: str, path: str) -> None:
     for attempt in range(6):              # OneDrive 正在上传时会短暂锁住目标文件
         try:
             os.replace(tmp, path)
@@ -189,7 +205,7 @@ def write_last_run(status: str, kinds: list[str], started: float) -> None:
     tmp = os.path.join(SYNC, 'last_run.json.tmp')
     with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(info, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, os.path.join(SYNC, 'last_run.json'))
+    replace_retry(tmp, os.path.join(SYNC, 'last_run.json'))
 
 
 # 正常文件名：YYYYMMDD.csv、YYYY-MM.csv、summary_sse.csv 这种；OneDrive 冲突副本会在后面加「-机器名」
@@ -489,10 +505,106 @@ def fetch_etf(etf_years: float, today: dt.date, force: bool, pause: float) -> No
     log('  ETF历史：新下/更新 %d 只，已新鲜跳过 %d 只（共 %d 只）' % (done, skipped, len(codes)))
 
 
+# ---------------------------------------------------------------- ETF 份额
+
+SHARE_COLS = ['代码', '名称', '市场', '份额', '来源']
+SZSE_ETF_URL = 'https://fund.szse.cn/api/report/ShowReport'
+
+
+def _sse_etf_share(day: dt.date) -> pd.DataFrame:
+    try:
+        df = ak.fund_etf_scale_sse(date=day.strftime('%Y%m%d'))
+    except KeyError:
+        # 当天收盘前/交易所还没出数时接口返回空 result，akshare 取列时报 KeyError，当作空表
+        df = None
+    if df is None or not len(df):
+        return pd.DataFrame(columns=SHARE_COLS)
+    return pd.DataFrame({
+        '代码': df['基金代码'].astype(str).str.zfill(6), '名称': df['基金简称'], '市场': 'SH',
+        '份额': pd.to_numeric(df['基金份额'], errors='coerce'), '来源': 'sse',
+    }).dropna(subset=['份额'])
+
+
+def _szse_etf_share() -> pd.DataFrame:
+    """akshare 的 fund_etf_scale_szse 把 bytes 直接丢给 pd.read_excel，新版 pandas 报 TypeError，
+    这里自己请求一遍包成 BytesIO。深交所只给当前规模，没有日期列。"""
+    r = requests.get(SZSE_ETF_URL, params={'SHOWTYPE': 'xlsx', 'CATALOGID': '1000_lf', 'TABKEY': 'tab1'},
+                     headers={'Referer': 'https://fund.szse.cn/marketdata/fundslist/index.html',
+                              'User-Agent': 'Mozilla/5.0'}, timeout=30)
+    r.raise_for_status()
+    df = pd.read_excel(io.BytesIO(r.content), engine='openpyxl', dtype={'基金代码': str})
+    return pd.DataFrame({
+        '代码': df['基金代码'].astype(str).str.zfill(6), '名称': df['基金简称'], '市场': 'SZ',
+        '份额': pd.to_numeric(df['当前规模(份)'].astype(str).str.replace(',', '', regex=False),
+                            errors='coerce'),
+        '来源': 'szse',
+    }).dropna(subset=['份额'])
+
+
+def _read_share(path: str) -> pd.DataFrame:
+    if not os.path.exists(path):
+        return pd.DataFrame(columns=SHARE_COLS)
+    return pd.read_csv(path, dtype={'代码': str})
+
+
+def _merge_share(path: str, new: pd.DataFrame) -> None:
+    """同一天的文件可能分几次写（上交所、深交所、etf_overview 从 QMT 补），按 代码+市场 合并，新的覆盖旧的。"""
+    old = _read_share(path)
+    if len(old):
+        keep = ~(old['代码'] + old['市场']).isin(new['代码'] + new['市场'])
+        new = pd.concat([old[keep], new], ignore_index=True)
+    save(new.sort_values(['市场', '代码'])[SHARE_COLS], path)
+
+
+def fetch_etf_share(share_days: int, today: dt.date, force: bool, pause: float) -> None:
+    folder = os.path.join(OUT, 'etf_share')
+    start = today - dt.timedelta(days=int(share_days * 1.6) + 10)
+    days = trading_days(start, today)[-share_days:]
+    if not days:
+        log('ETF份额：回看区间里没有交易日')
+        return
+    log('ETF份额：上交所回补 %d 个交易日（%s ~ %s），深交所存当前快照' % (len(days), days[0], days[-1]))
+
+    breaker = Breaker('上交所ETF份额')
+    done = 0
+    try:
+        for d in days:
+            path = os.path.join(folder, d.strftime('%Y%m%d') + '.csv')
+            if not force and (_read_share(path)['市场'] == 'SH').any():
+                continue
+            df = fetch('上交所ETF份额 %s' % d, lambda d=d: _sse_etf_share(d), pause=pause, breaker=breaker)
+            if df is not None and len(df):     # 当天收盘前、或者交易所没出数，返回空表，不算失败
+                _merge_share(path, df)
+                done += 1
+    except Blocked as e:
+        log('  ！' + str(e))
+        failures.append(str(e))
+    log('  上交所：新下 %d 天' % done)
+
+    now = dt.datetime.now()
+    if today in days and now.hour >= 15:
+        log('  深交所：交易日 15 点以后不存（当前规模可能已经换成今天的，日期对不上），'
+            '明天开盘前/盘中再跑；或者开着桥跑一次 etf_overview.py，它会从 QMT 补')
+        return
+    prev = [d for d in days if d < today]
+    if not prev:
+        return
+    day = prev[-1]
+    path = os.path.join(folder, day.strftime('%Y%m%d') + '.csv')
+    if not force and (_read_share(path)['市场'] == 'SZ').any():
+        log('  深交所：%s 已有，跳过' % day)
+        return
+    df = fetch('深交所ETF份额', _szse_etf_share, pause=pause)
+    if df is not None and len(df):
+        _merge_share(path, df)
+        log('  深交所：%d 只，记为 %s 的份额' % (len(df), day))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description='akshare 财务/龙虎榜/两融/涨停池/ETF数据下载（增量）')
-    parser.add_argument('kinds', nargs='*', choices=['finance', 'lhb', 'margin', 'zt_pool', 'etf'],
-                        help='要下哪几类，不写就是默认四类（finance/lhb/margin/zt_pool）；'
+    parser.add_argument('kinds', nargs='*',
+                        choices=['finance', 'lhb', 'margin', 'zt_pool', 'etf_share', 'etf'],
+                        help='要下哪几类，不写就是默认五类（finance/lhb/margin/zt_pool/etf_share）；'
                              'etf 比较重，不在默认里，要单独指定')
     parser.add_argument('--years', type=float, default=5,
                         help='财务、龙虎榜、两融汇总往前取几年，默认 5')
@@ -502,6 +614,8 @@ def main() -> None:
                         help='涨停池/炸板池往前取多少个交易日，默认 30（近两周热点扫描够用，不用拉多年历史）')
     parser.add_argument('--etf-years', type=float, default=10,
                         help='每只 ETF 历史行情往前取几年，默认 10')
+    parser.add_argument('--share-days', type=int, default=60,
+                        help='上交所 ETF 份额往前回补多少个交易日，默认 60（深交所没有历史，只能每天攒）')
     parser.add_argument('--sleep', type=float, default=0.5, help='每次请求后停多少秒，默认 0.5')
     parser.add_argument('--szse-sleep', type=float, default=3.0,
                         help='深交所请求之间停多少秒，默认 3（它有反爬）')
@@ -517,7 +631,7 @@ def main() -> None:
     today = dt.date.today()
     start = today - dt.timedelta(days=int(args.years * 365.25))
     detail_start = max(start, today - dt.timedelta(days=int(args.detail_years * 365.25)))
-    kinds = args.kinds or ['finance', 'lhb', 'margin', 'zt_pool']
+    kinds = args.kinds or ['finance', 'lhb', 'margin', 'zt_pool', 'etf_share']
     log('下载 %s，范围 %s ~ %s（两融明细从 %s 起，涨停池近 %d 个交易日），输出到 %s'
         % ('/'.join(kinds), start, today, detail_start, args.zt_days, OUT))
 
@@ -533,6 +647,8 @@ def main() -> None:
             fetch_margin(start, detail_start, today, args.force, args.sleep, args.szse_sleep)
         if 'zt_pool' in kinds:
             fetch_zt_pool(args.zt_days, today, args.force, args.sleep)
+        if 'etf_share' in kinds:
+            fetch_etf_share(args.share_days, today, args.force, args.sleep)
         if 'etf' in kinds:
             fetch_etf(args.etf_years, today, args.force, args.sleep)
     except BaseException:

@@ -91,6 +91,14 @@ HANDLEBAR_YIELD_MAX = 0.3                 # 单次最多让出多少秒
 # 万一你这版 QMT 在不该调的时候调 stop（比如每根 bar 都调），把这个改成 False 就退回原状。
 ENABLE_STOP_HOOK = True
 
+# 定时器：不靠行情 tick，按墙钟定时进 Python 让出时间片。
+#
+# handlebar 只在主图来新 tick 时才被调。2026-10-15 实测：11:30~13:00 整个午休一次都不调，
+# 收盘集合竞价（14:57~15:00）十几秒才调一次，盘中偶尔还会卡两三分钟，15:00 后彻底停 ——
+# 这些时候桥的后台线程全被饿死，客户端只看到「调用超时」。
+# ContextInfo.run_time 是 QMT 自带的定时器，按这个间隔回调 bridge_timer。设成 '' 就关掉。
+TIMER_PERIOD = '500nMilliSecond'
+
 # 真的允许下单/撤单吗。默认 False —— 查询随便查，下单先挡住。
 # 确认账号和参数都对了，再改成 True 重新「运行」一次。
 ALLOW_ORDER = False
@@ -560,6 +568,23 @@ class BridgeServer(object):
                                        kw.get('end_date', ''), kw.get('count', -1),
                                        kw.get('period', '1d'))
 
+        # ETF 的 IOPV 和申赎清单是 QMT 注入脚本全局的函数，不在 ContextInfo 上。
+        # 给 code_list 就一次查一批，省得几百只 ETF 来回几百趟；单只出错给 None。
+        if func == 'get_etf_iopv':
+            fn = _qmt_func('get_etf_iopv')
+            if 'code_list' in kw:
+                out = {}
+                for code in kw['code_list']:
+                    try:
+                        out[code] = fn(code)
+                    except Exception:
+                        out[code] = None
+                return out
+            return fn(kw['stock_code'])
+
+        if func == 'get_etf_info':
+            return _qmt_func('get_etf_info')(kw['stock_code'])
+
         # ---- 交易 ----------------------------------------------------
 
         if func == 'get_trade_detail_data':
@@ -767,7 +792,7 @@ class BridgeServer(object):
         if self.tick_log_at == 0.0:
             self.tick_log_at = now
         elif now - self.tick_log_at >= 10.0:
-            _log('handlebar 最近 %.1f 秒被调用 %d 次'
+            _log('最近 %.1f 秒进 Python %d 次（handlebar + 定时器）'
                  % (now - self.tick_log_at, self.ticks))
             self.ticks = 0
             self.tick_log_at = now
@@ -802,6 +827,20 @@ def init(C):
         _log('端口多半被上一轮的残留进程占着，重启 QMT 或换个 BRIDGE_PORT 再试')
         return
     reg['server'] = server
+    if TIMER_PERIOD:
+        try:
+            C.run_time('bridge_timer', TIMER_PERIOD, '2019-01-01 09:00:00')
+            _log('定时器已注册：每 %s 让出一次时间片' % TIMER_PERIOD)
+        except Exception as e:
+            _log('注册定时器失败（%s），只能靠 handlebar 驱动，没行情时桥会变慢' % e)
+
+
+def bridge_timer(C):
+    """run_time 定时器的回调。跟 handlebar 一样只是让出时间片，不依赖有没有行情。"""
+    server = _registry().get('server')
+    if server is None:
+        return
+    server.tick()
 
 
 def handlebar(C):

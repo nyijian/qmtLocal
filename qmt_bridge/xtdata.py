@@ -336,6 +336,22 @@ def get_trading_dates(stock_code, start_date='', end_date='', count=-1, period='
                           count=count, period=period)
 
 
+def get_etf_info(stockCode):
+    """ETF 申赎清单，与官方同名同语义。"""
+    return _client().call('get_etf_info', stock_code=stockCode)
+
+
+def get_etf_iopv(stock_code):
+    """ETF 基金份额参考净值（IOPV）。
+
+    官方 xtdata 没有这个函数，转的是大QMT内置 Python 的全局函数 get_etf_iopv。
+    传一个代码返回一个值；传列表返回 {代码: IOPV}，单只查不到的是 None。
+    """
+    if isinstance(stock_code, (list, tuple)):
+        return _client().call('get_etf_iopv', code_list=list(stock_code))
+    return _client().call('get_etf_iopv', stock_code=stock_code)
+
+
 def run():
     """阻塞当前线程接收推送；桥断开时抛异常。与官方同名同语义。"""
     bridge = _client()

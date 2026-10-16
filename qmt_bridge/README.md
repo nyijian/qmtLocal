@@ -212,6 +212,8 @@ trader.cancel_order_stock(acc, order_id)
 | `unsubscribe_quote` / `run` | 有 |
 | `get_full_tick` / `get_market_data_ex` / `get_instrument_detail` | 有。`get_market_data_ex` 仍返回 `{code: DataFrame}` |
 | `get_stock_list_in_sector` / `get_trading_dates` | 有 |
+| `get_etf_info` | 有，ETF 申赎清单 |
+| `get_etf_iopv` | 有，**官方 xtdata 没有**，转的是大QMT内置的同名全局函数（IOPV，基金份额参考净值）。传列表一次查一批，返回 `{代码: IOPV}` |
 | `download_history_data` | **没有**。大QMT的补数据是客户端自己管的，桥不转 |
 
 `subscribe_quote` 的 `start_time` / `end_time` / `count` 收下但不生效——
