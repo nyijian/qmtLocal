@@ -11,13 +11,20 @@
   * 2026-10-22：600366 最多 3 轮，净赚 > 0 开第 2 轮、> 100 元开第 3 轮，亏了不再开，加的额度用上了不收回。
   * 原有的安全限制：每只每天最多 2 笔、STOP 文件挡开仓、对手价偏离最新价 >1% 不发、ALLOW_ORDER 关着时额度退回并全部停、
     重启后委托计数不丢、坏 tick（成交额放大 100 倍）不触发开仓；有未平仓位时坏 tick 照常止损 / 回均价止盈。
+  * 2026-10-23 加固（ScriptBroker 按脚本给部分成交 / 废单 / 一直挂着，还能让查询返回空或报错）：
+    平仓部分成交、废单后补单，不占开仓额度，每轮最多 3 笔，用完停掉这只；成交额为 0 照常止损；重启后 last_vwap 不丢；
+    知道委托号却查不到 / 查询报错超过 LOST_WAIT 停掉这只；CSV 写失败不影响交易；运行锁；认单兜底核对价格和策略名；
+    过期 / 倒序行情不用；平仓放宽价格偏离到 3%；封板挂不出去只告警不停。
 """
 import csv
+import datetime as dt
 import json
 import os
 import shutil
+import socket
 import sys
 import tempfile
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -60,6 +67,53 @@ def read_orders(eng):
 
 def new_engine(broker=None):
     return t0_live.Engine('dry', DAY, broker or t0_live.PaperBroker())
+
+
+class ScriptBroker(t0_live.PaperBroker):
+    """按脚本决定每笔委托的结果：script 里依次是 (状态, 成交量)，用完了就全成。
+    get_mode = 'none' 让查委托返回空，'raise' 让查委托报错。"""
+
+    def __init__(self, script=()):
+        t0_live.PaperBroker.__init__(self)
+        self.script = list(script)
+        self.get_mode = None
+
+    def submit(self, code, side, qty, price, marker):
+        t0_live.PaperBroker.submit(self, code, side, qty, price, marker)
+        if self.script:
+            o = self.orders[marker]
+            o.order_status, o.traded_volume = self.script.pop(0)
+
+    def get(self, sysid):
+        if self.get_mode == 'none':
+            return None
+        if self.get_mode == 'raise':
+            raise RuntimeError('查询超时')
+        return t0_live.PaperBroker.get(self, sysid)
+
+
+class FakeOrder(object):
+    def __init__(self, sysid, code, otype, vol, price, remark='', strategy=''):
+        self.order_sysid, self.stock_code, self.order_type = sysid, code, otype
+        self.order_volume, self.price, self.order_remark, self.strategy_name = vol, price, remark, strategy
+
+
+class FakeTrader(object):
+    def __init__(self, orders):
+        self.orders = orders
+
+    def query_stock_orders(self, acc):
+        return self.orders
+
+
+def real_broker_with(orders):
+    b = t0_live.RealBroker.__new__(t0_live.RealBroker)        # 不走 __init__，不连桥
+    b.trader, b.acc = FakeTrader(orders), None
+    return b
+
+
+def raw_tick(eng, hhmmss, price, bid1, ask1, amount, vol=100000):
+    eng.feed(CODE, DAY + hhmmss, price, bid1, ask1, amount, vol, 500, 300)
 
 
 def main():
@@ -209,6 +263,172 @@ def main():
         tick(eng7, '100300', 10.00, 9.80, 9.99, 10.00)
         check('正常 tick 照常开第二轮', len(s7.orders) == 3, s7.orders)
         eng7.logf.close()
+
+        # ==== 2026-10-23 加固 ====
+        # ---- 平仓部分成交：剩下的接着补单，不占开仓额度
+        DAY = '20261029'
+        b = ScriptBroker([(56, 800), (53, 200)])           # 开仓全成；第一笔平仓只成 200 就撤了
+        e = new_engine(b)
+        s = e.stocks[CODE]
+        tick(e, '100006', 10.00, 9.90, 9.99, 10.00)
+        tick(e, '100100', 10.10, 9.90, 10.09, 10.10)         # 止损，只成 200
+        check('平仓部分成交：还剩 600', s.leg is not None and s.leg['qty'] == 600 and s.leg['closes'] == 1, s.leg)
+        check('部分成交那 200 股记了盈亏', s.realized < 0, s.realized)
+        tick(e, '100103', 10.10, 9.90, 10.09, 10.10)         # 还在止损线上 -> 补单（额度已经 2/2 了）
+        check('额度用完也能补平仓单', s.leg is None and len(s.orders) == 3, (s.leg, s.orders))
+        check('补的那笔是剩下的 600', s.orders[-1]['qty'] == 600, s.orders[-1])
+        tick(e, '100200', 10.00, 9.80, 9.99, 10.00)
+        check('补单不会多出开仓额度', len(s.orders) == 3, s.orders)
+        e.logf.close()
+
+        # ---- 平仓连续废单：补到 3 笔还没平就停掉这只
+        DAY = '20261030'
+        b = ScriptBroker([(56, 800), (57, 0), (57, 0), (57, 0)])
+        e = new_engine(b)
+        s = e.stocks[CODE]
+        tick(e, '100006', 10.00, 9.90, 9.99, 10.00)
+        for i, t in enumerate(['100100', '100103', '100106']):
+            tick(e, t, 10.10, 9.90, 10.09, 10.10)
+        check('废单 3 笔都补发了', len(s.orders) == 4 and s.leg['closes'] == 3 and not s.halted, (s.orders, s.halted))
+        tick(e, '100109', 10.10, 9.90, 10.09, 10.10)
+        check('平仓 3 笔用完停掉这只、留着仓位', bool(s.halted) and '手动处理' in s.halted and s.leg['qty'] == 800,
+              (s.halted, s.leg))
+        check('停了不再发', len(s.orders) == 4, s.orders)
+        e.logf.close()
+
+        # ---- 成交额为 0 的 tick：有仓位照常止损
+        DAY = '20261031'
+        e = new_engine()
+        s = e.stocks[CODE]
+        tick(e, '100006', 10.00, 9.90, 9.99, 10.00)
+        raw_tick(e, '100100', 10.10, 10.09, 10.10, 0, 0)
+        check('成交额 0 也照常止损', s.leg is None and s.orders[-1]['why'] == '止损', (s.leg, s.orders))
+        e.logf.close()
+
+        # ---- 重启后 last_vwap 不丢：坏 tick 照常按它止盈；没有 VWAP 时止损照样判断
+        DAY = '20261101'
+        e = new_engine()
+        tick(e, '100006', 10.00, 9.90, 9.99, 10.00)
+        e.save()
+        e.logf.close()
+        e2 = new_engine()
+        s2 = e2.stocks[CODE]
+        check('重启后接上仓位和 last_vwap', s2.leg is not None and abs((s2.last_vwap or 0) - 9.90) < 1e-6,
+              (s2.leg, s2.last_vwap))
+        tick(e2, '100100', 9.90, 9.90, 9.89, 9.90, bad=True)
+        check('重启后坏 tick 按存下的 VWAP 止盈', s2.leg is None and s2.orders[-1]['why'] == '回均价止盈', s2.orders)
+        e2.logf.close()
+        DAY = '20261102'
+        e = new_engine()
+        tick(e, '100006', 10.00, 9.90, 9.99, 10.00)
+        s = e.stocks[CODE]
+        s.last_vwap = None                                  # 模拟旧状态文件里没有 last_vwap
+        tick(e, '100100', 10.10, 9.90, 10.09, 10.10, bad=True)
+        check('没有 VWAP 时坏 tick 也照常止损', s.leg is None and s.orders[-1]['why'] == '止损', s.orders)
+        e.logf.close()
+
+        # ---- 知道委托号却查不到 / 查询报错：超过 LOST_WAIT 停掉这只
+        for mode in ('none', 'raise'):
+            DAY = '2026110' + ('3' if mode == 'none' else '4')
+            b = ScriptBroker([(50, 0)])                    # 开仓单一直挂着（已报）
+            e = new_engine(b)
+            s = e.stocks[CODE]
+            tick(e, '100006', 10.00, 9.90, 9.99, 10.00)
+            check('[%s] 开仓单挂着' % mode, s.pending is not None and s.orders[0]['sysid'], s.pending)
+            b.get_mode = mode
+            s.poll()
+            check('[%s] 查不到先开始计时' % mode, s.pending and s.pending['lost_at'] is not None and not s.halted,
+                  (s.pending, s.halted))
+            s.pending['lost_at'] = time.time() - t0_live.LOST_WAIT - 1
+            s.poll()
+            check('[%s] 超过 LOST_WAIT 停掉这只' % mode, s.pending is None and bool(s.halted)
+                  and s.orders[0]['status'] == 'lost', (s.halted, s.orders[0]['status']))
+            e.logf.close()
+
+        # ---- CSV 写失败（Excel 锁着）：交易照常，状态先存好
+        DAY = '20261105'
+        real_append = t0_live.append_csv
+
+        def locked(*a, **k):
+            raise PermissionError(13, 'Permission denied: orders.csv')
+        t0_live.append_csv = locked
+        try:
+            e = new_engine()
+            s = e.stocks[CODE]
+            tick(e, '100006', 10.00, 9.90, 9.99, 10.00)
+            tick(e, '100100', 9.90, 9.90, 9.89, 9.90)
+            check('CSV 写不进去照常开平', s.leg is None and len(s.orders) == 2 and s.realized > 0, (s.leg, s.orders))
+            with open(e.state_path, encoding='utf-8') as f:
+                st_saved = json.load(f)[CODE]
+            check('CSV 失败时状态文件已经存好', st_saved['leg'] is None and len(st_saved['orders']) == 2, st_saved)
+            e.logf.close()
+        finally:
+            t0_live.append_csv = real_append
+
+        # ---- 运行锁
+        DAY = '20261106'
+        e = new_engine()
+        check('第一个拿到锁', e.acquire_lock())
+        e_b = new_engine()
+        check('同一台机器、进程还在：第二个拿不到', not e_b.acquire_lock())
+        e.release_lock()
+        lock = os.path.join(e.dir, 'live.lock')
+        with open(lock, 'w', encoding='utf-8') as f:
+            json.dump({'host': socket.gethostname(), 'pid': 99999999, 'day': DAY}, f)
+        check('进程已经不在的旧锁可以接管', e_b.acquire_lock())
+        e_b.release_lock()
+        with open(lock, 'w', encoding='utf-8') as f:
+            json.dump({'host': 'OTHER-PC', 'pid': 1234, 'day': DAY}, f)
+        check('另一台机器今天的锁：拿不到', not e_b.acquire_lock())
+        e_b.force_lock = True
+        check('另一台机器的锁：--force 接管', e_b.acquire_lock())
+        e_b.release_lock()
+        with open(lock, 'w', encoding='utf-8') as f:
+            json.dump({'host': 'OTHER-PC', 'pid': 1234, 'day': '20200101'}, f)
+        e_b.force_lock = False
+        check('别的日子的锁算失效', e_b.acquire_lock())
+        e_b.release_lock()
+        check('pid_alive 认得自己', t0_live.pid_alive(os.getpid()) and not t0_live.pid_alive(99999999))
+        e.logf.close()
+        e_b.logf.close()
+
+        # ---- 认单兜底：备注对不上时要价格、策略名都对得上，且只有一笔
+        SELL = t0_live.STOCK_SELL
+        rb = real_broker_with([FakeOrder('1', CODE, SELL, 800, 9.99, remark='MINE')])
+        check('认单：备注对上直接认', rb.find(CODE, 'sell', 800, 'MINE', set(), 9.99) is not None)
+        rb = real_broker_with([FakeOrder('2', CODE, SELL, 800, 10.20)])
+        check('认单：价格不同不认', rb.find(CODE, 'sell', 800, 'MINE', set(), 9.99) is None)
+        rb = real_broker_with([FakeOrder('3', CODE, SELL, 800, 9.99)])
+        check('认单：代码方向数量价格都对、只有一笔才认', rb.find(CODE, 'sell', 800, 'MINE', set(), 9.99) is not None)
+        rb = real_broker_with([FakeOrder('4', CODE, SELL, 800, 9.99, strategy='手动')])
+        check('认单：策略名是别人的不认', rb.find(CODE, 'sell', 800, 'MINE', set(), 9.99) is None)
+        rb = real_broker_with([FakeOrder('5', CODE, SELL, 800, 9.99), FakeOrder('6', CODE, SELL, 800, 9.99)])
+        check('认单：对得上的有两笔不认', rb.find(CODE, 'sell', 800, 'MINE', set(), 9.99) is None)
+        rb = real_broker_with([FakeOrder('7', CODE, SELL, 800, 9.99)])
+        check('认单：发单前就有的不认', rb.find(CODE, 'sell', 800, 'MINE', {'7'}, 9.99) is None)
+
+        # ---- 过期 / 倒序行情
+        DAY = '20261107'
+        e = new_engine()
+        s = e.stocks[CODE]
+        now = dt.datetime.strptime(DAY + '100100', '%Y%m%d%H%M%S')
+        check('新行情能用', e.fresh_enough(CODE, DAY + '100055', now))
+        check('落后 %.0f 秒以上的不用' % t0_live.STALE_MAX, not e.fresh_enough(CODE, DAY + '100000', now))
+        s.last = (DAY + '100058', 10.0, 9.99, 10.0)
+        check('比上一笔还旧的不用', not e.fresh_enough(CODE, DAY + '100055', now))
+        e.logf.close()
+
+        # ---- 平仓放宽价格偏离到 3%；封板（对手价 0）挂不出去只告警不停
+        DAY = '20261108'
+        e = new_engine()
+        s = e.stocks[CODE]
+        tick(e, '100006', 10.00, 9.90, 9.99, 10.00)
+        tick(e, '100100', 10.10, 9.90, 10.09, 0)            # 卖一没了（涨停封板）
+        check('封板挂不出去：不发、不停、仓位留着', len(s.orders) == 1 and not s.halted and s.leg is not None,
+              (s.orders, s.halted))
+        tick(e, '100103', 10.10, 9.90, 10.09, 10.30)        # 卖一离最新价 2%：开仓会挡，平仓要发
+        check('平仓对手价偏离 2% 照样发', s.leg is None and len(s.orders) == 2, (s.leg, s.orders))
+        e.logf.close()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     print('\nFAILURES: %d' % len(FAILS))
