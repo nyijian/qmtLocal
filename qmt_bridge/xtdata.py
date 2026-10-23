@@ -41,7 +41,8 @@ import time
 DEFAULT_HOST = '127.0.0.1'
 DEFAULT_PORT = 58611
 DEFAULT_TIMEOUT = 30.0
-VERIFY_TIMEOUT = 5.0         # 连上之后确认对面真的在服务，等这么久
+VERIFY_TIMEOUT = 5.0         # 连上之后确认对面真的在服务，每次 ping 等这么久
+VERIFY_ATTEMPTS = 2          # ping 几次都没回才算不回应；桥偶尔会卡五六秒（2026-10-20 实测）
 
 enable_hello = True          # 与官方同名，置 False 可关掉连接提示
 
@@ -225,18 +226,31 @@ def connect(ip='', port=None, remember_if_success=True, verify=True):
     # 但操作系统层面的监听 fd 留在 QMT 进程里，于是 TCP 握手成功、没人 accept。
     # 不在这儿挡一下，后面每个请求都要干等到超时，报出来的是「调用 xxx 超时」，
     # 看不出真正的原因。
+    # 活着的桥也偶尔卡五六秒不回（2026-10-20 10:17 一次，原因没查到，之后 30 次新连接
+    # 都在 0.4 秒内回），所以超时一次先别下结论，在同一条连接上再 ping 一次。
+    # 第一次的迟到回包在 _handle 里找不到请求号，会被直接丢掉，不影响第二次。
     if verify:
-        try:
-            bridge.call('ping', timeout=VERIFY_TIMEOUT)
-        except Exception:
-            bridge.close()
-            raise BridgeError(
-                'QMT 桥 %s:%d 的端口在，但不回应请求。两种可能：\n'
-                '  1) 策略被停了，监听 fd 还留在 QMT 进程里（僵尸端口）——\n'
-                '     回「模型交易」把「桥接服务」那一行重新启动一次；\n'
-                '  2) 策略周期是「日线」这种低频的，QMT 很少进 Python，\n'
-                '     桥的后台线程抢不到时间片（实测 90 秒只应答 20 次）——\n'
-                '     把策略周期改成「分笔线」。' % (host, prt)) from None
+        for attempt in range(VERIFY_ATTEMPTS):
+            try:
+                bridge.call('ping', timeout=VERIFY_TIMEOUT)
+                break
+            except Exception:
+                if attempt + 1 < VERIFY_ATTEMPTS and bridge.alive:
+                    continue
+                bridge.close()
+                raise BridgeError(
+                    'QMT 桥 %s:%d 的端口在，但 %.0f 秒内 ping 了 %d 次都没回应。可能是：\n'
+                    '  1) 策略被停了，监听 fd 还留在 QMT 进程里（僵尸端口）——\n'
+                    '     回「模型交易」把「桥接服务」那一行重新启动一次；\n'
+                    '  2) 策略周期是「日线」这种低频的，QMT 很少进 Python，\n'
+                    '     桥的后台线程抢不到时间片（实测 90 秒只应答 20 次）——\n'
+                    '     把策略周期改成「分笔线」；\n'
+                    '  3) 已经收盘，QMT 不再驱动策略——改用 --offline / dat_reader；\n'
+                    '  4) 桥偶发卡顿——过几秒重试一次。\n'
+                    '分辨办法：看 QMT 日志 userdata\\log\\XtClient_FormulaOutput_<日期>.log，\n'
+                    '有这次的「客户端接入」、并且「最近 N 秒进 Python M 次」还在正常刷，\n'
+                    '桥就是活的，属于 4)；没有接入记录是 1)；M 很小是 2)。'
+                    % (host, prt, VERIFY_TIMEOUT * VERIFY_ATTEMPTS, VERIFY_ATTEMPTS)) from None
 
     _bridge = bridge
     if enable_hello:

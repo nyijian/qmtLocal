@@ -26,6 +26,7 @@
 5. 账号等真实值只放 `.env`，新配置项同步到 `.env.example`（不写真实值）。
 6. 改了 `桥接服务.py` 或 `qmt_bridge/` → 跑 `.venv\Scripts\python.exe tests\桥接自测.py`，要看到 `FAILURES: 0`。
    服务端改动要提醒用户重新粘贴进 QMT 并在「模型交易」里重新运行。
+7. 改了 `tools/t0_live.py`（实盘下单）→ 跑 `.venv313\Scripts\python.exe tests\t0_live自测.py`，要看到 `FAILURES: 0`。
 
 ## 改完代码顺手维护文档
 

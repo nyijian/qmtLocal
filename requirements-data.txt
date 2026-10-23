@@ -13,3 +13,6 @@ pandas==3.0.6
 # tools/ai_trader.py 调 Claude API 用的官方 SDK。没像 akshare 那样钉死版本——
 # 这是官方 SDK，不是爬网页，没有「网站改版就坏」那层风险，装最新的就行。
 anthropic
+
+# tools/market_tick_archive.py 全市场 tick 按半小时存 parquet。
+pyarrow==26.0.0

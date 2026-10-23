@@ -16,7 +16,9 @@
   * 平仓：回到 VWAP ± exit_frac × band 止盈；反向再走 stop_k × band 止损；force_time 强制还原。
   * 每只每天最多 max_rounds 轮；止损过的方向当天不再做。entry_start 前、entry_end 后不开新仓。
   * 成交价按吃对手价算（卖用买一、买用卖一），涨跌停封死（对手价为 0）不成交。
-  * 费用：佣金 commission（默认万 5，最低 min_commission 元）、卖出印花税 stamp_tax、过户费 transfer_fee。
+  * 费用：佣金 commission（params v3 起万 0.8，最低 min_commission 元）、卖出印花税 stamp_tax、过户费 transfer_fee。
+  * 股性档案（tools/stock_profile.py 生成，共享数据目录 stock_profiles/）：有档案的股票按档案覆盖每次股数（qty）
+    和允许的方向（sides），manual.json 手工覆盖优先；--no-profile 关掉。开盘日志里会打出用了哪些覆盖。
 
 记账（共享数据目录 sim_t0/，回放的记到 sim_t0/replay/，不跟实盘模拟混）：
   trades.csv   每一轮一行：开平时间价格、原因、毛利、费用、净利、当时的参数版本
@@ -118,6 +120,27 @@ def holdings_from_account():
     return {p.stock_code: int(p.volume) for p in trader.query_stock_positions(acc) if p.volume > 0}
 
 
+def load_profile_overrides(code):
+    """股性档案（tools/stock_profile.py 生成）里这只股票的 t0_overrides，再叠 manual.json 手工覆盖。
+    支持的键：qty（每次股数）、sides（允许的方向 sell_first / buy_first）。没有档案返回 {}。
+    这里直接读 JSON，不 import stock_profile（它 import 了本文件，互相 import 会绕）。"""
+    d = os.path.join(DATA_DIR, 'stock_profiles')
+    out = {}
+    try:
+        path = os.path.join(d, '%s.json' % code)
+        if os.path.exists(path):
+            with open(path, encoding='utf-8') as f:
+                out.update(json.load(f).get('t0_overrides', {}))
+        path = os.path.join(d, 'manual.json')
+        if os.path.exists(path):
+            with open(path, encoding='utf-8-sig') as f:
+                out.update(json.load(f).get(code, {}))
+    except Exception as e:                    # 档案坏了不影响开盘，按默认参数跑
+        print('读股性档案失败（%s），%s 按默认参数' % (e, code))
+        return {}
+    return {k: v for k, v in out.items() if k in ('qty', 'sides')}
+
+
 def fee(p, side, amount):
     c = max(amount * p['commission'], p['min_commission'])
     t = amount * p['transfer_fee']
@@ -144,12 +167,17 @@ def hms(ts):
 
 class StockT(object):
 
-    def __init__(self, code, name, base, band, p, log):
+    def __init__(self, code, name, base, band, p, log, ov=None):
         self.code, self.name, self.base, self.band, self.p, self.log = code, name, base, band, p, log
+        ov = ov or {}
         self.qty = int(base * p['qty_ratio'] // 100 * 100)
+        if ov.get('qty'):                     # 股性档案给的每次股数，不超过底仓
+            self.qty = int(min(ov['qty'], base) // 100 * 100)
         self.leg = None                       # 当前未平的一轮
         self.rounds = []                      # 已平的
-        self.banned = set()                   # 止损过的方向
+        self.banned = set()                   # 止损过的方向；档案没放行的方向一开始就关掉
+        if 'sides' in ov:
+            self.banned = {s for s in ('sell_first', 'buy_first') if s not in ov['sides']}
         self.last = None                      # 最后一笔行情，收盘结算用
         self.pre = None                       # 昨收，盘中从行情里记下，收盘结算不用再联网
         self.vol_unit = None                  # 成交量单位：1 = 股，100 = 手
@@ -169,6 +197,8 @@ class StockT(object):
         self.last = (ts, price, bid1, ask1)
         v = self.vwap(amount, volume, price)
         if v is None or self.qty <= 0:
+            return
+        if abs(v / price - 1) > 0.10:             # 坏 tick：QMT 偶尔推成交额放大 100 倍的（2026-10-19）
             return
         t = hms(ts)
         p, b = self.p, self.band
@@ -249,7 +279,7 @@ class StockT(object):
 
 class Session(object):
 
-    def __init__(self, holdings, params, day, mode):
+    def __init__(self, holdings, params, day, mode, use_profile=True):
         from qmt_bridge import xtdata
         self.xt = xtdata
         self.p, self.day, self.mode = params, day, mode
@@ -262,10 +292,12 @@ class Session(object):
         for code, base in holdings.items():
             det = xtdata.get_instrument_detail(code) or {}
             name = det.get('InstrumentName', '')
-            st = StockT(code, name, base, bands.get(code, params['band_min']), params, self.log)
+            ov = load_profile_overrides(code) if use_profile else {}
+            st = StockT(code, name, base, bands.get(code, params['band_min']), params, self.log, ov)
             self.stocks[code] = st
-            self.log('%s %s 底仓 %d 每次 %d 股 带宽 %.2f%%%s' % (
-                code, name, base, st.qty, st.band * 100, '' if st.qty else '（不足 100 股，不做）'))
+            self.log('%s %s 底仓 %d 每次 %d 股 带宽 %.2f%%%s%s' % (
+                code, name, base, st.qty, st.band * 100, '' if st.qty else '（不足 100 股，不做）',
+                '｜股性档案 %s' % json.dumps(ov, ensure_ascii=False) if ov else ''))
 
     def log(self, msg):
         print(msg)
@@ -413,6 +445,7 @@ def main():
     ap.add_argument('--interval', type=float, default=3.0, help='实时轮询间隔秒，默认 3')
     ap.add_argument('--report', action='store_true', help='只打印累计战绩')
     ap.add_argument('--replay-report', action='store_true', help='只打印回放的累计战绩')
+    ap.add_argument('--no-profile', action='store_true', help='不用股性档案，全部按 params.json')
     a = ap.parse_args()
 
     if a.report or a.replay_report:
@@ -432,10 +465,10 @@ def main():
     xtdata.connect()
     params = load_params()
     if a.replay:
-        Session(holdings, params, a.replay, 'replay').run_replay(a.until or '15:00:00')
+        Session(holdings, params, a.replay, 'replay', not a.no_profile).run_replay(a.until or '15:00:00')
     else:
         day = dt.date.today().strftime('%Y%m%d')
-        Session(holdings, params, day, 'live').run_live(a.interval, a.until or '14:57:00')
+        Session(holdings, params, day, 'live', not a.no_profile).run_live(a.interval, a.until or '14:57:00')
 
 
 if __name__ == '__main__':

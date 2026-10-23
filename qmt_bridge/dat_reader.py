@@ -126,13 +126,13 @@ def _read_records(path, last_n=None):
         rec = body[i * RECORD_SIZE:(i + 1) * RECORD_SIZE]
         ts = struct.unpack_from('<i', rec, 0)[0]
         # 跟 utcfromtimestamp(ts) + 8小时 等价；那个函数 3.12 起弃用，这样写 3.6 和 3.13 都没警告
-        date = (_EPOCH + datetime.timedelta(seconds=ts, hours=8)).date()
+        when = _EPOCH + datetime.timedelta(seconds=ts, hours=8)
         o, h, l, c = (struct.unpack_from('<i', rec, k)[0] / 1000.0 for k in (4, 8, 12, 16))
         volume = struct.unpack_from('<i', rec, 24)[0]
         amount = struct.unpack_from('<q', rec, 32)[0]
         prev_close = struct.unpack_from('<i', rec, 52)[0] / 1000.0
         rows.append({
-            'date': date, 'open': o, 'high': h, 'low': l, 'close': c,
+            'date': when.date(), 'time': when, 'open': o, 'high': h, 'low': l, 'close': c,
             'volume': volume, 'amount': amount, 'preClose': prev_close,
         })
     return rows
@@ -168,6 +168,28 @@ def read_daily(code, datadir=None):
 
     gap = (datetime.date.today() - rows[-1]['date']).days if rows else None
     return df, gap
+
+
+BAR_DIRS = {'1m': '60', '5m': '300'}
+
+
+def read_bars(code, period='5m', datadir=None):
+    """分钟线缓存（datadir\\<市场>\\300\\ 是 5 分钟，\\60\\ 是 1 分钟），跟日线同一种 64 字节记录。
+
+    返回 DataFrame，索引 'YYYYMMDDHHMMSS'（K 线**结束**时刻，09:35 是第一根 5 分钟线），
+    列 open/high/low/close/volume/amount/preClose——跟 get_market_data_ex 的分钟线形状一致。
+    2026-10-21 跟桥取到的 600436 5 分钟线逐根核对过：时间、开收、成交量完全一样。
+    preClose 在分钟线里的含义没核对过，别用。没下过分钟线的代码这个文件不存在，抛 FileNotFoundError，
+    去 QMT「数据管理」里补 5 分钟 / 1 分钟线。"""
+    import pandas as pd
+
+    path = dat_path(code, datadir, BAR_DIRS[period])
+    if not os.path.exists(path):
+        raise FileNotFoundError('本地没有这个代码的 %s 缓存：%s' % (period, path))
+    rows = _read_records(path)
+    index = [r['time'].strftime('%Y%m%d%H%M%S') for r in rows]
+    df = pd.DataFrame(rows, index=index)
+    return df[['open', 'high', 'low', 'close', 'volume', 'amount', 'preClose']]
 
 
 def scan_gaps(codes, datadir=None):
